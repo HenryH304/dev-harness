@@ -11,6 +11,13 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - Docker Compose uses `sqlite-data` named volume for SQLite persistence
 - Tests use `pyyaml` to parse docker-compose.yml — it's an extra dep in the venv
 - Backend port is configurable via PORT env var (default 9080)
+- Config module is at `backend/app/config.py` — use `load_config()` to get `AppConfig` dataclass
+- Env var overrides: PORT, MAX_AGENTS_SYSTEM, MAX_AGENTS_PER_COLUMN, REVIEW_REJECTION_THRESHOLD, AGENT_TIMEOUT_{TYPE}
+- Tests that set env vars must clean up (use `patch.dict` or try/finally) to avoid leaking state between tests
+- Database module is at `backend/app/database.py` — `Base`, `get_engine()`, `init_db()`, `get_session()`
+- Models are in `backend/app/models.py` — import `Ticket`, `Note`, `Event`, `AgentRegistry`, `Setting`, `TicketDependency`
+- Use in-memory SQLite (`sqlite+aiosqlite:///:memory:`) for test fixtures
+- `init_db(engine)` creates all tables — called in FastAPI lifespan handler on startup
 
 ---
 
@@ -35,4 +42,33 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - System Python is externally managed — must use venv
   - mypy strict mode requires fully typed return annotations
   - pyyaml needed as extra dependency for docker-compose tests
+---
+
+## 2026-03-15 - US-002
+- What was implemented: AppConfig dataclass with defaults, load_config() function that reads config.json then applies env var overrides, updated main.py to use config module
+- Files changed:
+  - backend/app/config.py (new)
+  - backend/app/main.py (modified — uses config module)
+  - backend/tests/test_us002_config.py (new — 16 tests)
+  - backend/tests/test_us001_scaffold.py (modified — fixed env leak in port tests)
+  - prd.json (US-002 passes: true)
+- **Patterns added to Codebase Patterns:** config module location, env var override names, env cleanup in tests
+- **Learnings for future iterations:**
+  - US-001 tests had env var leak (PORT=3000 not cleaned up) — caused cascading failures. Always use `patch.dict` or try/finally for env vars.
+  - `get_port()` was changed to read from config object rather than directly from env — existing tests needed updating
+---
+
+## 2026-03-15 - US-003
+- What was implemented: SQLAlchemy async database setup with all 6 tables — tickets, notes, events, agent_registry, settings, ticket_dependencies. FastAPI lifespan handler runs migrations on startup.
+- Files changed:
+  - backend/app/database.py (new — Base, get_engine, init_db, get_session)
+  - backend/app/models.py (new — Ticket, Note, Event, AgentRegistry, Setting, TicketDependency)
+  - backend/app/main.py (modified — added lifespan handler for DB init)
+  - backend/tests/test_us003_database.py (new — 24 tests)
+  - prd.json (US-003 passes: true)
+- **Patterns added to Codebase Patterns:** database module location, models location, in-memory SQLite for tests, init_db usage
+- **Learnings for future iterations:**
+  - ruff import sorting (I001) requires stdlib imports alphabetically before third-party — `collections.abc` before `contextlib`
+  - SQLAlchemy JSON column type works fine with SQLite via aiosqlite for storing lists/dicts
+  - Use `expire_on_commit=False` in test sessions to avoid lazy-load issues after commit
 ---

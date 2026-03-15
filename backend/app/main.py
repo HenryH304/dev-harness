@@ -1,11 +1,25 @@
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import AppConfig, load_config
+from app.database import get_engine, init_db
 
 config: AppConfig = load_config()
+engine = get_engine()
 
-app = FastAPI(title="DevHarness", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Run database migrations on startup."""
+    await init_db(engine)
+    yield
+    await engine.dispose()
+
+
+app = FastAPI(title="DevHarness", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
