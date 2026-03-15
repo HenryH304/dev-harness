@@ -255,3 +255,17 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - Agent type extracted from agent_id using `rsplit("-", 1)[0]` — this assumes the format `{type}-{hex}`
   - check_agent_timeouts takes session_factory (not a session) since it manages its own session lifecycle for the background task pattern
 ---
+
+## 2026-03-15 - US-014
+- What was implemented: Ralph loop integration for agent execution — `spawn_agent()` runs ralph binary in ticket's worktree with correct prompt and timeout. `build_prd_json()` creates ticket context (title, description, acceptance criteria, previous notes) as prd.json in worktree. `SpawnResult` dataclass captures success/failure and exit code. Prompt loaded via `load_prompt()` and written to worktree. progress.txt and ralph.log created in worktree (not committed).
+- Files changed:
+  - backend/app/ralph_runner.py (new — spawn_agent, build_prd_json, SpawnResult)
+  - backend/tests/test_us014_ralph_loop.py (new — 13 tests: 4 build_prd_json, 9 spawn_agent)
+  - prd.json (US-014 passes: true)
+- **Patterns added to Codebase Patterns:** None - no new patterns discovered
+- **Learnings for future iterations:**
+  - Ralph runner module is at `backend/app/ralph_runner.py` — `spawn_agent()`, `build_prd_json()`, `SpawnResult`
+  - `spawn_agent` takes a ticket dict (not ORM model) for decoupling — convert ORM to dict before calling
+  - `asyncio.create_subprocess_exec` used for async process management — mock it in tests
+  - prd.json is written to the worktree root so ralph can find it automatically
+---
