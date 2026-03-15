@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Note, Ticket
+from app.models import Note, Ticket, TicketDependency
 from app.schemas import (
     NoteResponse,
     TicketCreate,
@@ -91,6 +91,27 @@ async def update_ticket(
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     update_data = ticket_in.model_dump(exclude_unset=True)
+
+    # Check dependency constraint on state transitions past to_do
+    new_state = update_data.get("state")
+    if new_state is not None and new_state != "to_do" and new_state != "blocked":
+        deps_result = await session.execute(
+            select(TicketDependency.depends_on_ticket_id).where(
+                TicketDependency.ticket_id == ticket_id
+            )
+        )
+        dep_ids = [row[0] for row in deps_result.all()]
+        for dep_id in dep_ids:
+            dep_ticket_result = await session.execute(
+                select(Ticket.state).where(Ticket.id == dep_id)
+            )
+            row = dep_ticket_result.one_or_none()
+            if row is None or row[0] != "done":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot transition: unresolved dependencies exist",
+                )
+
     for field, value in update_data.items():
         setattr(ticket, field, value)
 

@@ -65,3 +65,32 @@ class NoteResponse(BaseModel):
 
 class TicketDetailResponse(TicketResponse):
     notes: list[NoteResponse] = []
+
+
+# --- Dependency schemas ---
+
+
+class DependencyCreate(BaseModel):
+    depends_on_ticket_id: int
+
+
+class DependencyResponse(BaseModel):
+    id: int
+    ticket_id: int
+    depends_on_ticket_id: int
+    created_at: datetime.datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TicketSummary(BaseModel):
+    id: int
+    title: str
+    state: str
+
+    model_config = {"from_attributes": True}
+
+
+class DependencyListResponse(BaseModel):
+    blocked_by: list[TicketSummary] = []
+    blocks: list[TicketSummary] = []
