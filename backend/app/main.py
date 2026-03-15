@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import AppConfig, load_config
@@ -11,6 +11,7 @@ from app.routers.dependencies import router as dependencies_router
 from app.routers.notes import router as notes_router
 from app.routers.tickets import router as tickets_router
 from app.routers.transitions import router as transitions_router
+from app.websocket import manager, redis_listener
 
 config: AppConfig = load_config()
 engine = get_engine()
@@ -18,9 +19,13 @@ engine = get_engine()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Run database migrations on startup."""
+    """Run database migrations on startup and start Redis listener."""
+    import asyncio
+
     await init_db(engine)
+    listener_task = asyncio.create_task(redis_listener())
     yield
+    listener_task.cancel()
     await close_redis()
     await engine.dispose()
 
@@ -45,6 +50,18 @@ app.include_router(transitions_router)
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time board updates."""
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, listen for client messages
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 
 def get_port() -> int:
