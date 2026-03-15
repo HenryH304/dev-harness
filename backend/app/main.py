@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import AppConfig, load_config
 from app.database import get_engine, init_db
+from app.redis_client import close_redis
 from app.routers.dependencies import router as dependencies_router
 from app.routers.notes import router as notes_router
 from app.routers.tickets import router as tickets_router
@@ -20,6 +21,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Run database migrations on startup."""
     await init_db(engine)
     yield
+    await close_redis()
     await engine.dispose()
 
 
