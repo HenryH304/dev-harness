@@ -48,6 +48,10 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - PICKUP_NEXT_STATE maps agent type to the state after pickup: developer→in_progress, reviewer→in_review, tester→in_test, merger→ready_to_merge
 - WIP_PRIORITY defines agent priority when near cap: merger(4) > tester(3) > reviewer(2) > developer(1)
 - `acquire_lock(ticket_id, agent_id, ttl)` uses Redis SET NX EX for distributed locking
+- COMPLETE_NEXT_STATE maps current state to next: in_progress→ready_for_review, in_review→ready_for_test, in_test→ready_to_merge, ready_to_merge→done
+- Agent ID format is `{agent_type}-{hex}` — extract type with `rsplit("-", 1)[0]`
+- SQLite stores naive datetimes — when comparing with tz-aware `datetime.now(utc)`, add `.replace(tzinfo=utc)` to DB values
+- `check_agent_timeouts(session_factory)` is a standalone async function (not an endpoint) — call from background task
 
 ---
 
@@ -236,4 +240,18 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - When mocking async functions with side_effect, the mock function signature must match the caller's call pattern (positional vs keyword args, default values)
   - Must mock `publish_event` in the app fixture for agent tests since it's called on every successful pickup
   - Merger agent has no "in_merge" state — ticket stays in ready_to_merge until completion moves it to done
+---
+
+## 2026-03-15 - US-013
+- What was implemented: Agent completion and failure flow — POST /api/agents/complete/{ticket_id} advances ticket to next state and releases agent lock. POST /api/agents/fail/{ticket_id} accepts {reason, suggested_fixes}, adds failure note, returns ticket to to_do, increments review_rejection_count for reviewers. Blocks ticket at threshold (3 rejections) with ticket_blocked event. check_agent_timeouts() background function detects timed-out agents, releases locks, increments per-type timeout counters.
+- Files changed:
+  - backend/app/routers/agents.py (modified — added complete, fail endpoints, _release_agent helper, check_agent_timeouts, COMPLETE_NEXT_STATE, TIMEOUT_FIELD)
+  - backend/app/schemas.py (modified — added AgentFailRequest)
+  - backend/tests/test_us013_agent_completion.py (new — 18 tests: 7 complete, 7 fail, 1 threshold/blocked, 3 timeout)
+  - prd.json (US-013 passes: true)
+- **Patterns added to Codebase Patterns:** COMPLETE_NEXT_STATE map, agent ID parsing, SQLite naive datetime handling, check_agent_timeouts usage
+- **Learnings for future iterations:**
+  - SQLite returns naive datetimes even if stored with tzinfo — must `.replace(tzinfo=utc)` before comparing with tz-aware `now(utc)`
+  - Agent type extracted from agent_id using `rsplit("-", 1)[0]` — this assumes the format `{type}-{hex}`
+  - check_agent_timeouts takes session_factory (not a session) since it manages its own session lifecycle for the background task pattern
 ---

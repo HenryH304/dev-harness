@@ -1,7 +1,8 @@
-"""Agent pickup and locking system."""
+"""Agent pickup, completion, failure, and timeout management."""
 
 import datetime
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case, select
@@ -10,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents import get_agent_config
 from app.config import load_config
 from app.database import get_session
-from app.models import AgentRegistry, Setting, Ticket
+from app.models import AgentRegistry, Note, Setting, Ticket
 from app.redis_client import get_redis, publish_event
-from app.schemas import TicketResponse
+from app.schemas import AgentFailRequest, TicketResponse
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -24,12 +25,28 @@ PICKUP_NEXT_STATE: dict[str, str] = {
     "merger": "ready_to_merge",  # no "in_merge" state — stays until done
 }
 
+# Forward state transitions on completion
+COMPLETE_NEXT_STATE: dict[str, str] = {
+    "in_progress": "ready_for_review",
+    "in_review": "ready_for_test",
+    "in_test": "ready_to_merge",
+    "ready_to_merge": "done",
+}
+
 # WIP reduction priority: higher number = higher priority when near cap
 WIP_PRIORITY: dict[str, int] = {
     "developer": 1,
     "reviewer": 2,
     "tester": 3,
     "merger": 4,
+}
+
+# Timeout counter field name per agent type
+TIMEOUT_FIELD: dict[str, str] = {
+    "developer": "developer_timeouts",
+    "reviewer": "reviewer_timeouts",
+    "tester": "tester_timeouts",
+    "merger": "merger_timeouts",
 }
 
 
@@ -52,6 +69,28 @@ async def acquire_lock(ticket_id: int, agent_id: str, ttl: int = 30) -> bool:
         f"lock:ticket:{ticket_id}", agent_id, nx=True, ex=ttl
     )
     return result is not None
+
+
+async def _release_agent(
+    session: AsyncSession, ticket: Ticket
+) -> None:
+    """Release agent lock from ticket and update agent registry."""
+    agent_id = ticket.current_agent
+    ticket.current_agent = None
+    ticket.assigned_at = None
+
+    if agent_id:
+        # Update agent registry entry
+        result = await session.execute(
+            select(AgentRegistry).where(
+                AgentRegistry.current_ticket_id == ticket.id,
+                AgentRegistry.status == "busy",
+            )
+        )
+        agent_entry = result.scalar_one_or_none()
+        if agent_entry:
+            agent_entry.status = "available"
+            agent_entry.current_ticket_id = None
 
 
 @router.post("/pickup/{agent_type}", response_model=TicketResponse)
@@ -184,3 +223,206 @@ async def pickup_ticket(
     )
 
     return picked_ticket
+
+
+@router.post("/complete/{ticket_id}", response_model=TicketResponse)
+async def complete_ticket(
+    ticket_id: int,
+    session: AsyncSession = Depends(_get_session),
+) -> Ticket:
+    """Mark agent work as successful and advance ticket to next state."""
+    result = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if ticket.current_agent is None:
+        raise HTTPException(
+            status_code=400, detail="Ticket has no assigned agent"
+        )
+
+    previous_state = ticket.state
+    next_state = COMPLETE_NEXT_STATE.get(previous_state)
+    if next_state is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot complete ticket in state '{previous_state}'",
+        )
+
+    agent_id = ticket.current_agent
+    ticket.state = next_state
+
+    # Release agent
+    await _release_agent(session, ticket)
+
+    await session.commit()
+    await session.refresh(ticket)
+
+    # Publish agent_completed event
+    await publish_event(
+        "ticket:events",
+        {
+            "event_type": "agent_completed",
+            "ticket_id": ticket_id,
+            "agent_id": agent_id,
+            "previous_state": previous_state,
+            "new_state": next_state,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        },
+    )
+
+    return ticket
+
+
+@router.post("/fail/{ticket_id}", response_model=TicketResponse)
+async def fail_ticket(
+    ticket_id: int,
+    payload: AgentFailRequest,
+    session: AsyncSession = Depends(_get_session),
+) -> Ticket:
+    """Report agent task failure and return ticket to to_do."""
+    result = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if ticket.current_agent is None:
+        raise HTTPException(
+            status_code=400, detail="Ticket has no assigned agent"
+        )
+
+    agent_id = ticket.current_agent
+    previous_state = ticket.state
+    config = load_config()
+
+    # Determine agent type from agent_id (format: "{type}-{hex}")
+    agent_type = agent_id.rsplit("-", 1)[0] if "-" in agent_id else agent_id
+
+    # Increment review_rejection_count if from reviewer
+    if agent_type == "reviewer":
+        ticket.review_rejection_count += 1
+
+    # Add failure note
+    note_content = f"Agent {agent_id} failed: {payload.reason}"
+    if payload.suggested_fixes:
+        note_content += f"\n\nSuggested fixes: {payload.suggested_fixes}"
+    note = Note(
+        ticket_id=ticket_id,
+        author=agent_id,
+        content=note_content,
+        note_type="failure",
+    )
+    session.add(note)
+
+    # Release agent
+    await _release_agent(session, ticket)
+
+    # Check if review rejection threshold reached
+    if (
+        agent_type == "reviewer"
+        and ticket.review_rejection_count >= config.review_rejection_threshold
+    ):
+        ticket.state = "blocked"
+    else:
+        ticket.state = "to_do"
+
+    await session.commit()
+    await session.refresh(ticket)
+
+    # Publish event
+    event_payload: dict[str, Any] = {
+        "event_type": "agent_failed",
+        "ticket_id": ticket_id,
+        "agent_id": agent_id,
+        "previous_state": previous_state,
+        "new_state": ticket.state,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    await publish_event("ticket:events", event_payload)
+
+    # If blocked, also publish ticket_blocked event
+    if ticket.state == "blocked":
+        blocked_payload: dict[str, Any] = {
+            "event_type": "ticket_blocked",
+            "ticket_id": ticket_id,
+            "agent_id": agent_id,
+            "review_rejection_count": ticket.review_rejection_count,
+            "reason": payload.reason,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        await publish_event("ticket:events", blocked_payload)
+
+    return ticket
+
+
+async def check_agent_timeouts(
+    session_factory: Any,
+) -> None:
+    """Check for agents that have exceeded their timeout and release them.
+
+    This is designed to be called as a periodic background task.
+    """
+    config = load_config()
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    async with session_factory() as session:
+        # Find all busy agents
+        result = await session.execute(
+            select(AgentRegistry).where(AgentRegistry.status == "busy")
+        )
+        busy_agents = list(result.scalars().all())
+
+        for agent_entry in busy_agents:
+            if agent_entry.started_at is None or agent_entry.current_ticket_id is None:
+                continue
+
+            timeout_seconds = config.agent_timeouts.get(agent_entry.agent_type, 600)
+            started = agent_entry.started_at
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=datetime.timezone.utc)
+            elapsed = (now - started).total_seconds()
+
+            if elapsed <= timeout_seconds:
+                continue
+
+            # Timed out — release agent and ticket
+            ticket_result = await session.execute(
+                select(Ticket).where(Ticket.id == agent_entry.current_ticket_id)
+            )
+            ticket = ticket_result.scalar_one_or_none()
+            if ticket is None:
+                continue
+
+            previous_state = ticket.state
+            agent_id = ticket.current_agent
+
+            # Increment the correct timeout counter
+            timeout_field = TIMEOUT_FIELD.get(agent_entry.agent_type)
+            if timeout_field:
+                current_val: int = getattr(ticket, timeout_field)
+                setattr(ticket, timeout_field, current_val + 1)
+
+            # Return ticket to to_do
+            ticket.state = "to_do"
+            ticket.current_agent = None
+            ticket.assigned_at = None
+
+            # Update agent registry
+            agent_entry.status = "available"
+            agent_entry.current_ticket_id = None
+
+            await session.commit()
+
+            # Publish timeout event
+            await publish_event(
+                "ticket:events",
+                {
+                    "event_type": "agent_failed",
+                    "ticket_id": ticket.id,
+                    "agent_id": agent_id,
+                    "previous_state": previous_state,
+                    "new_state": "to_do",
+                    "reason": "timeout",
+                    "timestamp": now.isoformat(),
+                },
+            )

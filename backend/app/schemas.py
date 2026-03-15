@@ -86,6 +86,11 @@ class TransitionRequest(BaseModel):
     manual_override: bool = False
 
 
+class AgentFailRequest(BaseModel):
+    reason: str
+    suggested_fixes: str | None = None
+
+
 class DependencyCreate(BaseModel):
     depends_on_ticket_id: int
 
