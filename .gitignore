@@ -1,0 +1,14 @@
+# Dev Harness
+progress.txt
+ralph.log
+.env
+__pycache__/
+*.pyc
+node_modules/
+*.egg-info/
+dist/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+nohup.out
+*.db

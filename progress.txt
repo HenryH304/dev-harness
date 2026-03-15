@@ -1,3 +1,38 @@
 # Ralph Progress Log
 Started: Sun, 15 Mar 2026 21:25:11 GMT
+
+## Codebase Patterns
+- Python venv is at `backend/.venv` — activate with `source .venv/bin/activate` from backend/
+- Run tests from `backend/` directory: `python -m pytest tests/ -v`
+- Typecheck: `python -m mypy app/` from backend/
+- Lint: `python -m ruff check app/ tests/` from backend/
+- mypy strict mode is enabled — use explicit type annotations (e.g., `dict[str, str]` not `dict`)
+- Set `asyncio_default_fixture_loop_scope = "function"` in pyproject.toml to avoid pytest-asyncio deprecation warning
+- Docker Compose uses `sqlite-data` named volume for SQLite persistence
+- Tests use `pyyaml` to parse docker-compose.yml — it's an extra dep in the venv
+- Backend port is configurable via PORT env var (default 9080)
+
+---
+
+## 2026-03-15 - US-001
+- What was implemented: Project scaffold with Docker Compose (4 services: frontend/nginx, backend/FastAPI, redis, sqlite volume), .env.example, .gitignore, backend skeleton with health endpoint
+- Files changed:
+  - docker-compose.yml (new)
+  - .env.example (new)
+  - .gitignore (new)
+  - backend/Dockerfile (new)
+  - backend/requirements.txt (new)
+  - backend/pyproject.toml (new)
+  - backend/app/__init__.py (new)
+  - backend/app/main.py (new)
+  - backend/tests/__init__.py (new)
+  - backend/tests/test_us001_scaffold.py (new)
+  - frontend/Dockerfile (new)
+  - frontend/index.html (new)
+  - frontend/nginx.conf (new)
+- **Patterns added to Codebase Patterns:** venv location, test/lint/typecheck commands, mypy strict mode, asyncio fixture scope, pyyaml test dep
+- **Learnings for future iterations:**
+  - System Python is externally managed — must use venv
+  - mypy strict mode requires fully typed return annotations
+  - pyyaml needed as extra dependency for docker-compose tests
 ---

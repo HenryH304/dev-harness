@@ -1,0 +1,28 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    ports:
+      - "${PORT:-9080}:9080"
+    environment:
+      - PORT=${PORT:-9080}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=sqlite:///data/devharness.db
+    volumes:
+      - sqlite-data:/app/data
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  sqlite-data:
