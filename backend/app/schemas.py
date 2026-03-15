@@ -79,6 +79,13 @@ class NoteCreate(BaseModel):
 # --- Dependency schemas ---
 
 
+class TransitionRequest(BaseModel):
+    new_state: str
+    agent_id: str | None = None
+    note: str | None = None
+    manual_override: bool = False
+
+
 class DependencyCreate(BaseModel):
     depends_on_ticket_id: int
 

@@ -27,6 +27,11 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - Ticket state transitions past `to_do` are blocked if unresolved dependencies exist (enforced in tickets router PATCH)
 - Notes router is at `backend/app/routers/notes.py` — uses same `_get_session` pattern
 - SQLite timestamps lack sub-second precision — use `Note.id.desc()` as tiebreaker for ordering
+- Transitions router is at `backend/app/routers/transitions.py` — uses ALLOWED_TRANSITIONS dict for validation
+- Redis client helper is at `backend/app/redis_client.py` — `publish_event(channel, event)` publishes JSON to Redis
+- `redis.from_url()` needs `# type: ignore[no-untyped-call]` for mypy strict mode
+- State transitions use `mock.patch("app.routers.transitions.publish_event")` in tests to avoid real Redis dependency
+- TransitionRequest schema accepts: new_state, agent_id, note, manual_override
 
 ---
 
@@ -127,4 +132,21 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - **Learnings for future iterations:**
   - SQLite `func.now()` server_default has only second-level precision — notes created in rapid succession get identical timestamps. Always add `id.desc()` as secondary sort.
   - The notes router follows the exact same pattern as tickets/dependencies routers — _get_session dependency, 404 check for ticket existence.
+---
+
+## 2026-03-15 - US-007
+- What was implemented: State transition API with validation — POST /api/tickets/{id}/transition endpoint. Validates allowed forward transitions (to_do → in_progress → ... → done), any-state-to-blocked, blocked-with-override, dependency enforcement. Auto-generates notes and Event records on each transition. Publishes state_change events to Redis via new redis_client helper.
+- Files changed:
+  - backend/app/schemas.py (modified — added TransitionRequest)
+  - backend/app/redis_client.py (new — Redis client with publish_event helper)
+  - backend/app/routers/transitions.py (new — transition endpoint with validation)
+  - backend/app/main.py (modified — registered transitions router)
+  - backend/tests/test_us007_transitions.py (new — 27 tests)
+  - prd.json (US-007 passes: true)
+- **Patterns added to Codebase Patterns:** transitions router location, redis_client helper, mypy redis ignore, mock pattern for Redis in tests, TransitionRequest schema
+- **Learnings for future iterations:**
+  - `redis.asyncio.from_url()` is untyped — requires `# type: ignore[no-untyped-call]` for mypy strict
+  - Mock `publish_event` at the import site (`app.routers.transitions.publish_event`) not at definition site
+  - Blocked state has empty ALLOWED_TRANSITIONS — all transitions from blocked require manual_override flag
+  - Tests that span multiple routers (transitions + dependencies + notes + tickets) must override _get_session for all four
 ---

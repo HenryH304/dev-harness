@@ -9,6 +9,7 @@ from app.database import get_engine, init_db
 from app.routers.dependencies import router as dependencies_router
 from app.routers.notes import router as notes_router
 from app.routers.tickets import router as tickets_router
+from app.routers.transitions import router as transitions_router
 
 config: AppConfig = load_config()
 engine = get_engine()
@@ -36,6 +37,7 @@ app.add_middleware(
 app.include_router(tickets_router)
 app.include_router(dependencies_router)
 app.include_router(notes_router)
+app.include_router(transitions_router)
 
 
 @app.get("/api/health")
