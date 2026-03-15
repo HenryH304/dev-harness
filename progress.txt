@@ -43,6 +43,11 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - Async generator cleanup: must explicitly call `await gen.aclose()` after `break` to trigger `finally` block in tests
 - Worktree service is at `backend/app/worktree.py` — `create_worktree(ticket_id, project_path)` and `delete_worktree(ticket_id, project_path, worktree_path)`
 - When mocking `subprocess.run` for worktree tests, use a side_effect that creates the worktree directory (git normally does this)
+- Agents router is at `backend/app/routers/agents.py` — POST /api/agents/pickup/{agent_type}
+- Mock `publish_event` at `app.routers.agents.publish_event` when testing agent pickup to avoid real Redis
+- PICKUP_NEXT_STATE maps agent type to the state after pickup: developer→in_progress, reviewer→in_review, tester→in_test, merger→ready_to_merge
+- WIP_PRIORITY defines agent priority when near cap: merger(4) > tester(3) > reviewer(2) > developer(1)
+- `acquire_lock(ticket_id, agent_id, ttl)` uses Redis SET NX EX for distributed locking
 
 ---
 
@@ -201,4 +206,34 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - **Learnings for future iterations:**
   - When mocking `subprocess.run` for functions that expect the subprocess to create directories (like `git worktree add`), must use `side_effect` to create the directory — otherwise post-subprocess file operations (gitignore, copy) fail with FileNotFoundError
   - Branch deletion after worktree removal is best-effort — the branch may already be gone if it was merged
+---
+
+## 2026-03-15 - US-011
+- What was implemented: Agent type definitions and prompt loading — `AgentTypeConfig` dataclass with column_binding, timeout, prompt_path. Four agent types defined (developer, reviewer, tester, merger) with correct column bindings. `load_prompt()` reads prompt files with fallback placeholders. `get_agent_config()` helper with validation. Fallback prompts created for reviewer, tester, merger in backend/prompts/.
+- Files changed:
+  - backend/app/agents.py (new — AgentTypeConfig, AGENT_TYPES, get_agent_config, load_prompt)
+  - backend/prompts/reviewer.md (new — placeholder prompt)
+  - backend/prompts/tester.md (new — placeholder prompt)
+  - backend/prompts/merger.md (new — placeholder prompt)
+  - backend/tests/test_us011_agent_types.py (new — 14 tests)
+  - prd.json (US-011 passes: true)
+- **Patterns added to Codebase Patterns:** None - no new patterns discovered
+- **Learnings for future iterations:**
+  - Agent module is at `backend/app/agents.py` — `AGENT_TYPES` dict, `get_agent_config()`, `load_prompt()`
+  - Prompt files for non-developer agents are in `backend/prompts/{type}.md`
+  - Developer prompt path is hardcoded to `/home/henry/Projects/my-ralph-template/prompt.md`
+---
+
+## 2026-03-15 - US-012
+- What was implemented: Agent pickup and locking system — POST /api/agents/pickup/{agent_type} endpoint. Redis distributed lock (SET NX EX) prevents concurrent pickup. Active priority project tickets prioritised. System-wide agent cap enforced (429 at capacity). WIP reduction priority: merger > tester > reviewer > developer when near cap. Increments agent_attempts, updates ticket state, registers agent in agent_registry, publishes agent_assigned event to Redis.
+- Files changed:
+  - backend/app/routers/agents.py (new — pickup endpoint, acquire_lock, WIP priority logic)
+  - backend/app/main.py (modified — registered agents router)
+  - backend/tests/test_us012_agent_pickup.py (new — 15 tests)
+  - prd.json (US-012 passes: true)
+- **Patterns added to Codebase Patterns:** agents router location, publish_event mock pattern, PICKUP_NEXT_STATE map, WIP_PRIORITY map, acquire_lock usage
+- **Learnings for future iterations:**
+  - When mocking async functions with side_effect, the mock function signature must match the caller's call pattern (positional vs keyword args, default values)
+  - Must mock `publish_event` in the app fixture for agent tests since it's called on every successful pickup
+  - Merger agent has no "in_merge" state — ticket stays in ready_to_merge until completion moves it to done
 ---
