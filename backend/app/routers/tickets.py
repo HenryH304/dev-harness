@@ -69,7 +69,9 @@ async def get_ticket(
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     notes_result = await session.execute(
-        select(Note).where(Note.ticket_id == ticket_id).order_by(Note.created_at.desc())
+        select(Note)
+        .where(Note.ticket_id == ticket_id)
+        .order_by(Note.created_at.desc(), Note.id.desc())
     )
     notes = list(notes_result.scalars().all())
 

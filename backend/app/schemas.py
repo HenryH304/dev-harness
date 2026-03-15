@@ -67,6 +67,15 @@ class TicketDetailResponse(TicketResponse):
     notes: list[NoteResponse] = []
 
 
+# --- Note schemas ---
+
+
+class NoteCreate(BaseModel):
+    author: str
+    content: str
+    note_type: str
+
+
 # --- Dependency schemas ---
 
 
