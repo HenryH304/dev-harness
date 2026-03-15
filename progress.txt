@@ -30,6 +30,10 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - Transitions router is at `backend/app/routers/transitions.py` — uses ALLOWED_TRANSITIONS dict for validation
 - Redis client helper is at `backend/app/redis_client.py` — `publish_event(channel, event)` publishes JSON to Redis
 - `redis.from_url()` needs `# type: ignore[no-untyped-call]` for mypy strict mode
+- WebSocket manager is at `backend/app/websocket.py` — global `manager` instance tracks connections
+- `redis_listener()` runs as background task in lifespan — subscribes to `ticket:events` and broadcasts to all WebSocket clients
+- WebSocket endpoint is at `/ws` — defined in `app/main.py`, uses `manager.connect/disconnect`
+- Mock `init_db` and `close_redis` when testing WebSocket endpoints with `TestClient`
 - State transitions use `mock.patch("app.routers.transitions.publish_event")` in tests to avoid real Redis dependency
 - TransitionRequest schema accepts: new_state, agent_id, note, manual_override
 - `subscribe_events(channel)` is an async generator — use `async for event in subscribe_events(...):`
@@ -168,4 +172,19 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - `client.pubsub()` is a sync method on redis.asyncio — mock it with `MagicMock` not `AsyncMock`
   - Async generator `finally` blocks don't run automatically on `break` in tests — need explicit `await gen.aclose()`
   - To test FastAPI lifespan, mock both `init_db` and `close_redis` to avoid real DB/Redis connections
+---
+
+## 2026-03-15 - US-009
+- What was implemented: WebSocket endpoint for real-time board updates — ConnectionManager class for tracking/broadcasting to WebSocket clients, /ws endpoint in main.py, redis_listener background task that subscribes to ticket:events and broadcasts to all connected clients, stale connection cleanup on broadcast errors.
+- Files changed:
+  - backend/app/websocket.py (new — ConnectionManager, redis_listener, global manager instance)
+  - backend/app/main.py (modified — added /ws endpoint, redis_listener background task in lifespan)
+  - backend/tests/test_us009_websocket.py (new — 15 tests: 8 unit tests for ConnectionManager, 4 integration tests for WebSocket endpoint, 3 tests for Redis listener broadcasting)
+  - prd.json (US-009 passes: true)
+- **Patterns added to Codebase Patterns:** WebSocket manager location, redis_listener background task, /ws endpoint location, TestClient mock pattern
+- **Learnings for future iterations:**
+  - FastAPI TestClient supports `websocket_connect("/ws")` context manager for WebSocket testing
+  - Global `manager` instance is shared — tests using TestClient will connect to the same manager
+  - `redis_listener` uses `subscribe_events` async generator — mock it to yield test events
+  - Background tasks in lifespan need `asyncio.create_task()` and cancellation on shutdown
 ---
