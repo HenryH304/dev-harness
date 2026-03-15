@@ -269,3 +269,30 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - `asyncio.create_subprocess_exec` used for async process management — mock it in tests
   - prd.json is written to the worktree root so ralph can find it automatically
 ---
+
+## 2026-03-15 - US-015
+- What was implemented: Ralph prd.json import API — POST /api/projects/import accepts {project_name, prd_path}, reads prd.json from disk, converts userStories to Ticket records with correct field mapping. All imported tickets start in to_do state. Error handling for missing files, invalid JSON, and missing userStories key.
+- Files changed:
+  - backend/app/routers/projects.py (new — import endpoint with ProjectImportRequest/Response schemas)
+  - backend/app/main.py (modified — registered projects router)
+  - backend/tests/test_us015_import.py (new — 10 tests)
+  - prd.json (US-015 passes: true)
+- **Patterns added to Codebase Patterns:** None - no new patterns discovered
+- **Learnings for future iterations:**
+  - Projects router follows same pattern as other routers — `_get_session` dependency, lazy engine import
+  - Import endpoint schemas (ProjectImportRequest/Response) are defined inline in the router since they're only used there
+---
+
+## 2026-03-15 - US-016
+- What was implemented: Settings API — GET /api/settings returns all settings as key-value pairs, PATCH /api/settings creates or updates settings. Settings stored in Setting model (key/value table). config.json precedence verified via existing AppConfig load_config().
+- Files changed:
+  - backend/app/routers/settings.py (new — GET and PATCH endpoints, SettingsResponse/SettingsUpdateRequest/SettingsUpdateResponse schemas)
+  - backend/app/main.py (modified — registered settings router)
+  - backend/tests/test_us016_settings.py (new — 8 tests)
+  - prd.json (US-016 passes: true)
+- **Patterns added to Codebase Patterns:** None - no new patterns discovered
+- **Learnings for future iterations:**
+  - Settings router follows the same `_get_session` pattern as other routers
+  - Settings are stored as string values in the Setting table — consumers should parse to appropriate types
+  - mypy strict mode on this codebase does NOT require `# type: ignore[misc]` on async generator `_get_session` — ruff had flagged it as unused in projects router too, but mypy passes without it
+---
