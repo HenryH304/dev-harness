@@ -1,5 +1,6 @@
 import type { Ticket, ColumnKey } from './types.js';
 import { COLUMNS } from './types.js';
+import { openDetailPanel } from './detail-panel.js';
 
 export function groupTicketsByState(
   tickets: Ticket[]
@@ -54,6 +55,10 @@ export function renderCard(ticket: Ticket): HTMLElement {
   }
 
   card.appendChild(meta);
+
+  card.addEventListener('click', () => {
+    openDetailPanel(ticket.id);
+  });
 
   return card;
 }
