@@ -1,7 +1,9 @@
-import os
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.config import AppConfig, load_config
+
+config: AppConfig = load_config()
 
 app = FastAPI(title="DevHarness", version="0.1.0")
 
@@ -20,7 +22,7 @@ async def health() -> dict[str, str]:
 
 
 def get_port() -> int:
-    return int(os.environ.get("PORT", "9080"))
+    return config.port
 
 
 if __name__ == "__main__":

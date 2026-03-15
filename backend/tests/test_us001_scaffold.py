@@ -7,7 +7,8 @@ import pytest
 import yaml
 from httpx import ASGITransport, AsyncClient
 
-from app.main import app, get_port
+from app.config import load_config
+from app.main import app
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
@@ -61,14 +62,17 @@ class TestBackendConfig:
     """Test backend configuration."""
 
     def test_default_port(self) -> None:
-        # Ensure default port is 9080
         os.environ.pop("PORT", None)
-        assert get_port() == 9080
+        config = load_config()
+        assert config.port == 9080
 
     def test_port_from_env(self) -> None:
         os.environ["PORT"] = "3000"
-        assert get_port() == 3000
-        os.environ.pop("PORT")
+        try:
+            config = load_config()
+            assert config.port == 3000
+        finally:
+            os.environ.pop("PORT")
 
 
 class TestHealthEndpoint:
