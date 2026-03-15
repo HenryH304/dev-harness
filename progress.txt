@@ -41,6 +41,8 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - EVENT_TYPES constant defines all valid event types: ticket_state_changed, agent_assigned, agent_completed, agent_failed, ticket_blocked
 - Redis pubsub mock: use `mock.MagicMock` (not AsyncMock) for `client.pubsub()` since it's a sync method returning a pubsub object
 - Async generator cleanup: must explicitly call `await gen.aclose()` after `break` to trigger `finally` block in tests
+- Worktree service is at `backend/app/worktree.py` — `create_worktree(ticket_id, project_path)` and `delete_worktree(ticket_id, project_path, worktree_path)`
+- When mocking `subprocess.run` for worktree tests, use a side_effect that creates the worktree directory (git normally does this)
 
 ---
 
@@ -187,4 +189,16 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - Global `manager` instance is shared — tests using TestClient will connect to the same manager
   - `redis_listener` uses `subscribe_events` async generator — mock it to yield test events
   - Background tasks in lifespan need `asyncio.create_task()` and cancellation on shutdown
+---
+
+## 2026-03-15 - US-010
+- What was implemented: Git worktree management service — `create_worktree()` creates a git worktree branched from main with branch `ticket/{ticket_id}`, adds `progress.txt` and `ralph.log` to `.gitignore`, copies `AGENTS.md` from main. `delete_worktree()` removes the worktree and deletes the branch (branch deletion is best-effort). Error handling for missing paths and git failures via `WorktreeError` exception.
+- Files changed:
+  - backend/app/worktree.py (new — create_worktree, delete_worktree, WorktreeError)
+  - backend/tests/test_us010_worktree.py (new — 14 tests: 9 for create, 5 for delete)
+  - prd.json (US-010 passes: true)
+- **Patterns added to Codebase Patterns:** worktree service location, subprocess mock side_effect pattern
+- **Learnings for future iterations:**
+  - When mocking `subprocess.run` for functions that expect the subprocess to create directories (like `git worktree add`), must use `side_effect` to create the directory — otherwise post-subprocess file operations (gitignore, copy) fail with FileNotFoundError
+  - Branch deletion after worktree removal is best-effort — the branch may already be gone if it was merged
 ---
