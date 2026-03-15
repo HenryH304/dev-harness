@@ -1,0 +1,473 @@
+{
+  "project": "DevHarness",
+  "branchName": "feature/dev-harness-mvp",
+  "description": "Dev Harness - Multi-Agent Task Management System. A Dockerised kanban board with FastAPI backend, TypeScript frontend, SQLite database, and Redis event broker for autonomous multi-agent software development workflows.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Project scaffold and Docker Compose setup",
+      "description": "As a developer, I need the project structure, Docker Compose configuration, and base dependencies set up so all services can run with a single command.",
+      "acceptanceCriteria": [
+        "Create project directory structure: frontend/, backend/, with docker-compose.yml at root",
+        "docker-compose.yml defines 4 services: frontend (nginx), backend (FastAPI), redis, and a SQLite volume mount",
+        "Backend service runs FastAPI on port 9080 (configurable via PORT env var)",
+        "Frontend service serves static files via nginx",
+        "Redis service starts and is reachable from backend",
+        ".env.example file documents all required environment variables",
+        ".gitignore excludes progress.txt, ralph.log, .env, __pycache__, node_modules",
+        "docker-compose up starts all services without errors",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "FastAPI backend base with config loading",
+      "description": "As a developer, I need the FastAPI app skeleton with config loading from config.json and environment variables.",
+      "acceptanceCriteria": [
+        "FastAPI app initialises with CORS middleware",
+        "Config loads from config.json in project root (if present), with env var overrides",
+        "Config supports: PORT (default 9080), agent timeouts per type (developer 20min, reviewer 10min, tester 10min, merger 5min), max_agents_system (default 10), max_agents_per_column (default 10), review_rejection_threshold (default 3)",
+        "GET /api/health endpoint returns {status: ok}",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "SQLite database setup and migrations",
+      "description": "As a developer, I need the SQLite database schema created with all required tables.",
+      "acceptanceCriteria": [
+        "SQLAlchemy (or Tortoise ORM) configured with SQLite",
+        "Tickets table created with fields: id, project, title, description, acceptance_criteria (JSON), priority, state, branch_name, worktree_path, current_agent, assigned_at, agent_attempts, developer_timeouts, reviewer_timeouts, tester_timeouts, merger_timeouts, review_rejection_count, created_at, updated_at",
+        "State field supports: to_do, in_progress, ready_for_review, in_review, ready_for_test, in_test, ready_to_merge, done, blocked",
+        "Notes table created with fields: id, ticket_id (FK), author, content, note_type, created_at",
+        "Note type supports: progress, failure, review, test_result, general",
+        "Events table created with fields: id, ticket_id (FK), event_type, previous_state, new_state, agent_id, payload (JSON), created_at",
+        "Agent registry table created with fields: id, agent_type, status (available/busy), current_ticket_id, started_at",
+        "Settings table created with fields: key, value, updated_at",
+        "Ticket dependencies table created with fields: id, ticket_id (FK), depends_on_ticket_id (FK), created_at",
+        "Database migrations run successfully on startup",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Ticket CRUD API endpoints",
+      "description": "As a developer, I need REST API endpoints to create, read, update, and delete tickets.",
+      "acceptanceCriteria": [
+        "POST /api/tickets creates a ticket with required fields (project, title, description, acceptance_criteria, priority)",
+        "GET /api/tickets returns all tickets, filterable by project and state query params",
+        "GET /api/tickets/{id} returns a single ticket with its notes",
+        "PATCH /api/tickets/{id} updates ticket fields",
+        "DELETE /api/tickets/{id} deletes a ticket",
+        "All responses use consistent JSON schema",
+        "Unit tests for all CRUD operations",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Ticket dependency management API",
+      "description": "As a developer, I need API endpoints to manage ticket dependencies with cycle detection.",
+      "acceptanceCriteria": [
+        "POST /api/tickets/{id}/dependencies adds a dependency (depends_on_ticket_id)",
+        "DELETE /api/tickets/{id}/dependencies/{dep_id} removes a dependency",
+        "GET /api/tickets/{id}/dependencies returns blocked_by and blocks arrays derived from ticket_dependencies table",
+        "Cycle detection runs on POST — returns 400 error if circular dependency detected",
+        "Blocked tickets (with unresolved hard dependencies) cannot transition past to_do state",
+        "Unit tests for dependency creation, deletion, and cycle detection",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Notes and comments API",
+      "description": "As an agent or user, I need to add and retrieve timestamped notes on tickets.",
+      "acceptanceCriteria": [
+        "POST /api/tickets/{id}/notes creates a note with fields: author, content, note_type",
+        "GET /api/tickets/{id}/notes returns notes ordered by created_at descending",
+        "Note content supports plain text (markdown rendered in UI)",
+        "Unit tests for note creation and retrieval",
+        "Golden path e2e test: create ticket, add 3 notes, verify order",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "State transition API with validation",
+      "description": "As a system, I need a validated state transition endpoint that enforces workflow rules.",
+      "acceptanceCriteria": [
+        "POST /api/tickets/{id}/transition accepts {new_state, agent_id, note} payload",
+        "Validates allowed transitions: to_do → in_progress → ready_for_review → in_review → ready_for_test → in_test → ready_to_merge → done",
+        "Any state can transition to blocked",
+        "Blocked tickets cannot transition without manual override flag",
+        "Prevents transition to in_progress if hard dependencies not in done state",
+        "Auto-generates a note on every state transition",
+        "Publishes state_change event to Redis channel ticket:events",
+        "Unit tests for valid and invalid transitions",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Redis event publisher and subscriber",
+      "description": "As a system, I need Redis Pub/Sub wired up for agent coordination and UI broadcasting.",
+      "acceptanceCriteria": [
+        "Redis client initialised in FastAPI on startup",
+        "publish_event(channel, event) helper publishes JSON events to Redis",
+        "subscribe_events() async generator subscribes to ticket:events channel",
+        "Events include: ticket_state_changed, agent_assigned, agent_completed, agent_failed, ticket_blocked",
+        "Event payload includes: event_type, ticket_id, previous_state, new_state, agent_id, timestamp",
+        "Unit tests for publish and subscribe",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "WebSocket endpoint for real-time board updates",
+      "description": "As a UI client, I need a WebSocket connection to receive live board updates.",
+      "acceptanceCriteria": [
+        "GET /ws WebSocket endpoint accepts connections",
+        "FastAPI subscribes to Redis ticket:events and broadcasts to all connected WebSocket clients",
+        "Connection status tracked, stale connections cleaned up",
+        "Auto-reconnect handled client-side",
+        "Unit tests for WebSocket message handling",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Git worktree management service",
+      "description": "As a system, I need a service to create and delete git worktrees for each ticket.",
+      "acceptanceCriteria": [
+        "create_worktree(ticket_id, project_path) creates a git worktree branched from main, branch named ticket/{ticket_id}",
+        "Worktree path stored on ticket as worktree_path, branch name as branch_name",
+        "delete_worktree(ticket_id) deletes the worktree and branch after merge",
+        "progress.txt and ralph.log added to .gitignore in worktree",
+        "AGENTS.md from main is present in worktree",
+        "Error handling for missing project path or git failures",
+        "Unit tests for worktree creation and deletion",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Agent type definitions and prompt loading",
+      "description": "As a system, I need agent type configurations with prompts loaded from files.",
+      "acceptanceCriteria": [
+        "Define 4 agent types: developer, reviewer, tester, merger",
+        "Developer prompt loaded from /home/henry/Projects/my-ralph-template/prompt.md",
+        "Reviewer, tester, merger prompts loaded from configurable paths (defaulting to backend/prompts/{type}.md)",
+        "Fallback placeholder prompts created for reviewer, tester, merger if files don't exist",
+        "Agent type config includes: column binding, timeout, prompt path",
+        "Column bindings: developer→to_do, reviewer→ready_for_review, tester→ready_for_test, merger→ready_to_merge",
+        "Unit tests for prompt loading and agent config validation",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Agent pickup and locking system",
+      "description": "As an agent, I need to claim a ticket with distributed locking to prevent concurrent pickup.",
+      "acceptanceCriteria": [
+        "POST /api/agents/pickup/{agent_type} finds the next available ticket for that agent type",
+        "Uses Redis distributed lock (SET NX EX) to prevent concurrent pickup of same ticket",
+        "Prioritises tickets from the active priority project",
+        "Enforces system-wide agent cap (default 10) — returns 429 if at capacity",
+        "WIP reduction priority: merger > tester > reviewer > developer when near cap",
+        "Increments agent_attempts on pickup",
+        "Updates ticket state to in_progress (or in_review / in_test as appropriate)",
+        "Registers agent in agent registry",
+        "Unit tests for pickup logic including concurrency and cap enforcement",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Agent completion and failure flow",
+      "description": "As an agent, I need to report task completion or failure and trigger appropriate state transitions.",
+      "acceptanceCriteria": [
+        "POST /api/agents/complete/{ticket_id} marks work as successful, advances ticket to next state, releases agent lock",
+        "POST /api/agents/fail/{ticket_id} accepts {reason, suggested_fixes} payload",
+        "On failure: adds failure note to ticket, increments review_rejection_count if from reviewer, returns ticket to to_do",
+        "If review_rejection_count reaches threshold (default 3): moves ticket to blocked, publishes ticket_blocked event, alerts via Henry notification",
+        "Timeout detection: background task checks agent_registry for tickets assigned longer than agent type timeout, releases lock and increments appropriate timeout counter",
+        "Agent status updated to available on completion/failure/timeout",
+        "Unit tests for success, failure, and timeout paths",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Ralph loop integration for agent execution",
+      "description": "As a system, I need to spawn a ralph loop process for each agent task in the ticket's worktree.",
+      "acceptanceCriteria": [
+        "spawn_agent(ticket, agent_type) runs ralph binary in ticket's worktree with correct prompt and timeout",
+        "Agent receives ticket context: title, description, acceptance criteria, previous notes as part of prd.json in worktree",
+        "ralph runs with -timeout flag matching agent type timeout config",
+        "On ralph process exit: success calls /api/agents/complete, failure calls /api/agents/fail",
+        "progress.txt and ralph.log created in worktree, not committed",
+        "Unit tests for agent spawn and result handling",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Ralph prd.json import API",
+      "description": "As a developer, I need to import an existing Ralph prd.json file to create board tickets.",
+      "acceptanceCriteria": [
+        "POST /api/projects/import accepts {project_name, prd_path} payload",
+        "Reads prd.json from given path, converts user stories to tickets",
+        "Maps Ralph fields: id→id, title→title, description→description, acceptanceCriteria→acceptance_criteria, priority→priority",
+        "Sets project field to project_name (folder name)",
+        "All imported tickets start in to_do state",
+        "Returns count of imported tickets",
+        "Unit tests for import with sample Ralph prd.json",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Settings API",
+      "description": "As a user, I need API endpoints to read and update system settings.",
+      "acceptanceCriteria": [
+        "GET /api/settings returns all current settings",
+        "PATCH /api/settings updates one or more settings values",
+        "Settings include: agent timeouts per type, max_agents_system, max_agents_per_column, review_rejection_threshold, active_priority_project",
+        "config.json values take precedence over database settings on startup",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "TypeScript frontend scaffold",
+      "description": "As a developer, I need the frontend project scaffolded with Vite and TypeScript.",
+      "acceptanceCriteria": [
+        "Vite + TypeScript project initialised in frontend/",
+        "API client utility configured to call backend at /api",
+        "WebSocket client utility with auto-reconnect",
+        "Base CSS with professional styling variables",
+        "npm run build produces dist/ for nginx",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Kanban board UI — columns and ticket cards",
+      "description": "As a user, I want to see all 9 columns with tickets displayed as cards.",
+      "acceptanceCriteria": [
+        "Renders 9 columns: To Do, In Progress, Ready for Review, In Review, Ready for Test, In Test, Ready to Merge, Done, Blocked",
+        "Each column shows ticket count badge",
+        "Ticket cards show: title, priority badge, project name, assigned agent, dependency count",
+        "Blocked column visually distinct (e.g. red border)",
+        "Responsive layout works on desktop and tablet",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Real-time board updates via WebSocket",
+      "description": "As a user, I want the board to update live when tickets change state.",
+      "acceptanceCriteria": [
+        "Frontend connects to /ws on load",
+        "State change events update ticket card position without page refresh",
+        "Connection status indicator shown (connected/reconnecting)",
+        "Auto-reconnects on disconnect",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Ticket detail panel",
+      "description": "As a user, I want to click a ticket card to see full details, notes, and history.",
+      "acceptanceCriteria": [
+        "Clicking a ticket card opens a side panel or modal",
+        "Shows: title, description, acceptance criteria (with checkboxes), state, priority, project, branch name",
+        "Shows agent attempt counts and timeout counts per type",
+        "Shows review_rejection_count",
+        "Shows notes in reverse chronological order",
+        "Shows dependency list (blocked_by / blocks)",
+        "Close button dismisses panel",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Manual drag-and-drop state changes",
+      "description": "As a user, I want to drag tickets between columns to manually override state.",
+      "acceptanceCriteria": [
+        "Tickets are draggable between columns",
+        "Invalid transitions prevented with visual feedback",
+        "On drop: calls POST /api/tickets/{id}/transition with manual_override flag",
+        "Auto-generates note: 'Manually moved from X to Y by user'",
+        "Visual ghost card during drag",
+        "Undo button appears for 5 seconds after drop",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Admin dashboard — agent monitor and metrics",
+      "description": "As a user, I want a dashboard showing active agents, workflow metrics, and system health.",
+      "acceptanceCriteria": [
+        "Dashboard page accessible at /dashboard",
+        "Shows active agents: agent_id, type, current ticket, time elapsed",
+        "Shows workflow metrics: ticket count per column, average time per state",
+        "Shows timeout analytics: timeout counts per agent type aggregated across all tickets",
+        "Shows failed/blocked tickets with rejection counts",
+        "Manual controls: force unlock stuck ticket button, pause/resume all agents toggle",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Settings panel in admin dashboard",
+      "description": "As a user, I want to adjust system settings from the dashboard.",
+      "acceptanceCriteria": [
+        "Settings section in dashboard shows all current config values",
+        "Editable fields: agent timeouts per type, max_agents_system, review_rejection_threshold, active_priority_project",
+        "Save button calls PATCH /api/settings",
+        "Changes take effect immediately without restart",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Dependency visualisation on board",
+      "description": "As a user, I want to see which tickets are blocked by dependencies on the board.",
+      "acceptanceCriteria": [
+        "Blocked-by-dependency tickets show a lock icon on their card",
+        "Tooltip on lock icon lists the blocking ticket IDs",
+        "Automatic unblocking: when a dependency moves to done, dependent ticket lock icon removed",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Henry alert notifications for blocked tickets",
+      "description": "As Henry, I need to be alerted when a ticket is escalated to blocked so I can notify Derrick.",
+      "acceptanceCriteria": [
+        "When ticket moves to blocked state, publish ticket_blocked event to Redis",
+        "Notification service subscribes to ticket_blocked events",
+        "Sends alert via OpenClaw (or logs to a notifications file if OpenClaw not available)",
+        "Alert message includes: ticket id, title, project, review_rejection_count, last failure note",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-026",
+      "title": "Project management — import and priority",
+      "description": "As a user, I want to import Ralph projects and set the active priority project.",
+      "acceptanceCriteria": [
+        "Import project form: input for project name and prd.json path, calls POST /api/projects/import",
+        "Project list shows all projects with ticket counts",
+        "Set active priority project button updates settings",
+        "Active priority project visually highlighted on board (filter by project dropdown)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-027",
+      "title": "End-to-end golden path test",
+      "description": "As a developer, I need a full end-to-end test verifying the complete agent workflow.",
+      "acceptanceCriteria": [
+        "E2e test: import a sample prd.json, verify tickets created in to_do",
+        "Simulate developer agent pickup: ticket moves to in_progress, worktree created",
+        "Simulate developer completion: ticket moves to ready_for_review",
+        "Simulate reviewer failure: ticket returns to to_do with failure note, review_rejection_count incremented",
+        "Simulate 3 review rejections: ticket moves to blocked, alert triggered",
+        "Simulate merger success: ticket moves to done, worktree deleted",
+        "All state changes reflected via WebSocket in UI",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
