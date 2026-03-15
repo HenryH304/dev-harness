@@ -187,3 +187,43 @@ body {
   background: rgba(59, 130, 246, 0.15);
   color: var(--color-info);
 }
+
+/* Blocked column */
+.column--blocked {
+  border-color: var(--color-danger);
+  border-width: 2px;
+}
+
+.column--blocked .column-header {
+  color: var(--color-danger);
+}
+
+/* Column body */
+.column-body {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: var(--space-sm);
+}
+
+/* Card agent */
+.card-agent {
+  font-style: italic;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .column {
+    min-width: 220px;
+  }
+}
+
+@media (max-width: 768px) {
+  .board {
+    padding: var(--space-md);
+    gap: var(--space-sm);
+  }
+
+  .column {
+    min-width: 180px;
+  }
+}

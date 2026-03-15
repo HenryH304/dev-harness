@@ -52,6 +52,16 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - Agent ID format is `{agent_type}-{hex}` — extract type with `rsplit("-", 1)[0]`
 - SQLite stores naive datetimes — when comparing with tz-aware `datetime.now(utc)`, add `.replace(tzinfo=utc)` to DB values
 - `check_agent_timeouts(session_factory)` is a standalone async function (not an endpoint) — call from background task
+- Frontend tests: `npx vitest run` from frontend/ directory
+- Frontend typecheck: `npx tsc --noEmit` from frontend/
+- Frontend build: `npm run build` from frontend/ — produces dist/ for nginx
+- TypeScript `erasableSyntaxOnly` is enabled — no parameter properties, enums, or namespaces
+- API client is at `frontend/src/api.ts` — `apiGet`, `apiPost`, `apiPatch`, `apiDelete` all return `ApiResponse<T>`
+- WebSocket client is at `frontend/src/ws.ts` — `createWsClient(url, reconnectInterval)` with auto-reconnect
+- Board tests need `// @vitest-environment jsdom` directive at top of file for DOM API access (default test env is `node`)
+- Shared frontend types are in `frontend/src/types.ts` — `Ticket`, `COLUMNS`, `ColumnKey`
+- Board rendering is in `frontend/src/board.ts` — `renderBoard(container, tickets)`, `renderCard(ticket)`, `groupTicketsByState(tickets)`
+- Install `jsdom` as devDependency for DOM-based frontend tests
 
 ---
 
@@ -295,4 +305,47 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - Settings router follows the same `_get_session` pattern as other routers
   - Settings are stored as string values in the Setting table — consumers should parse to appropriate types
   - mypy strict mode on this codebase does NOT require `# type: ignore[misc]` on async generator `_get_session` — ruff had flagged it as unused in projects router too, but mypy passes without it
+---
+
+## 2026-03-15 - US-017
+- What was implemented: Frontend Vite + TypeScript scaffold with API client utility (`apiFetch`, `apiGet`, `apiPost`, `apiPatch`, `apiDelete`), WebSocket client utility with auto-reconnect (`createWsClient`), base CSS with professional dark-theme styling variables, Dockerfile updated for multi-stage build (node build → nginx serve dist/).
+- Files changed:
+  - frontend/package.json (new — Vite + TypeScript + vitest)
+  - frontend/package-lock.json (new)
+  - frontend/tsconfig.json (new — strict TS config)
+  - frontend/vite.config.ts (new — proxy config for /api and /ws)
+  - frontend/index.html (modified — updated title to DevHarness)
+  - frontend/Dockerfile (modified — multi-stage build with npm)
+  - frontend/.gitignore (new — node_modules, dist)
+  - frontend/src/api.ts (new — API client with typed responses)
+  - frontend/src/api.test.ts (new — 7 tests)
+  - frontend/src/ws.ts (new — WebSocket client with auto-reconnect)
+  - frontend/src/ws.test.ts (new — 6 tests)
+  - frontend/src/style.css (new — dark theme CSS variables)
+  - frontend/src/main.ts (new — app shell with connection status)
+  - prd.json (US-017 passes: true)
+- **Patterns added to Codebase Patterns:** Frontend test/typecheck/build commands, erasableSyntaxOnly constraint, vitest setup
+- **Learnings for future iterations:**
+  - TypeScript `erasableSyntaxOnly` is enabled — cannot use constructor parameter properties (`public url: string`), use explicit property declarations instead
+  - Vite scaffold creates sample files (counter.ts, assets/) that should be removed
+  - `vitest run` for one-off test execution, `vitest` for watch mode
+  - Frontend proxy config in vite.config.ts proxies /api to backend:9080 and /ws for WebSocket
+---
+
+## 2026-03-15 - US-018
+- What was implemented: Kanban board UI with 9 columns (To Do, In Progress, Ready for Review, In Review, Ready for Test, In Test, Ready to Merge, Done, Blocked) and ticket cards showing title, priority badge, project name, and assigned agent. Blocked column has distinct red border. Responsive layout with horizontal scroll. Board loads tickets from API on startup, renders empty columns on failure.
+- Files changed:
+  - frontend/src/types.ts (new — Ticket interface, COLUMNS array, ColumnKey type)
+  - frontend/src/board.ts (new — renderBoard, renderCard, groupTicketsByState)
+  - frontend/src/board.test.ts (new — 15 tests: 2 groupTicketsByState, 7 renderCard, 6 renderBoard)
+  - frontend/src/style.css (modified — added blocked column styling, column-body, card-agent, responsive breakpoints)
+  - frontend/src/main.ts (modified — wired up API loading with error handling, renders board)
+  - frontend/package.json (modified — added jsdom devDependency)
+  - prd.json (US-018 passes: true)
+- **Patterns added to Codebase Patterns:** jsdom vitest directive, shared types location, board module location, jsdom install requirement
+- **Learnings for future iterations:**
+  - Vitest default test environment is `node` — DOM tests need `// @vitest-environment jsdom` at top of test file
+  - `apiFetch` throws on network errors (no backend) — callers must try/catch, not just check `response.ok`
+  - Playwright verified: all 9 columns, red blocked border (rgb(239,68,68)), overflow-x: auto, ticket count badges
+  - `erasableSyntaxOnly` means no enums — use `as const` arrays with derived types instead
 ---
