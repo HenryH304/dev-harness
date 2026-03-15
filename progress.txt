@@ -62,6 +62,8 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - Shared frontend types are in `frontend/src/types.ts` — `Ticket`, `COLUMNS`, `ColumnKey`
 - Board rendering is in `frontend/src/board.ts` — `renderBoard(container, tickets)`, `renderCard(ticket)`, `groupTicketsByState(tickets)`
 - Install `jsdom` as devDependency for DOM-based frontend tests
+- Realtime updates module is at `frontend/src/realtime.ts` — `setupRealtimeUpdates()`, `applyStateChange()`
+- Use `vi.restoreAllMocks()` in beforeEach/afterEach for vitest test isolation when using spyOn
 
 ---
 
@@ -348,4 +350,19 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - `apiFetch` throws on network errors (no backend) — callers must try/catch, not just check `response.ok`
   - Playwright verified: all 9 columns, red blocked border (rgb(239,68,68)), overflow-x: auto, ticket count badges
   - `erasableSyntaxOnly` means no enums — use `as const` arrays with derived types instead
+---
+
+## 2026-03-15 - US-019
+- What was implemented: Real-time board updates via WebSocket — `setupRealtimeUpdates()` connects WsClient on load, listens for `ticket_state_changed` events, re-fetches tickets from API (with local fallback via `applyStateChange`), re-renders board. Connection status indicator updates dot class and label text for connected/reconnecting/disconnected states. main.ts wired up with dynamic WS URL based on current location.
+- Files changed:
+  - frontend/src/realtime.ts (new — setupRealtimeUpdates, applyStateChange, StateChangeEvent, isStateChangeEvent)
+  - frontend/src/realtime.test.ts (new — 10 tests: 3 applyStateChange, 7 setupRealtimeUpdates)
+  - frontend/src/main.ts (modified — wired up WS client and realtime updates)
+  - prd.json (US-019 passes: true)
+- **Patterns added to Codebase Patterns:** Realtime module location, vi.restoreAllMocks for test isolation
+- **Learnings for future iterations:**
+  - Realtime updates module is at `frontend/src/realtime.ts` — `setupRealtimeUpdates()` takes wsClient, board element, dot/label elements, and initial tickets
+  - `applyStateChange()` is the fallback when API re-fetch fails — updates ticket state locally
+  - vi.spyOn mocks leak between tests in vitest — always call `vi.restoreAllMocks()` in beforeEach/afterEach
+  - WS URL must be dynamically constructed from `location.protocol` and `location.host` for production builds
 ---
