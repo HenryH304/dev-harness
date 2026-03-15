@@ -1,6 +1,8 @@
 import './style.css';
 import { apiGet } from './api.js';
 import { renderBoard } from './board.js';
+import { createWsClient } from './ws.js';
+import { setupRealtimeUpdates } from './realtime.js';
 import type { Ticket } from './types.js';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
@@ -18,18 +20,25 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 
 async function loadBoard(): Promise<void> {
   const board = document.getElementById('board');
-  if (!board) return;
+  const dot = document.getElementById('ws-dot');
+  const label = document.getElementById('ws-label');
+  if (!board || !dot || !label) return;
 
+  let tickets: Ticket[] = [];
   try {
     const response = await apiGet<Ticket[]>('/tickets');
     if (response.ok) {
-      renderBoard(board, response.data);
-    } else {
-      renderBoard(board, []);
+      tickets = response.data;
     }
   } catch {
-    renderBoard(board, []);
+    // continue with empty tickets
   }
+
+  renderBoard(board, tickets);
+
+  const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
+  const wsClient = createWsClient(wsUrl);
+  setupRealtimeUpdates(wsClient, board, dot, label, tickets);
 }
 
 loadBoard();
