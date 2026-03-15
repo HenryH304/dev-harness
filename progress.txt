@@ -32,6 +32,11 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - `redis.from_url()` needs `# type: ignore[no-untyped-call]` for mypy strict mode
 - State transitions use `mock.patch("app.routers.transitions.publish_event")` in tests to avoid real Redis dependency
 - TransitionRequest schema accepts: new_state, agent_id, note, manual_override
+- `subscribe_events(channel)` is an async generator — use `async for event in subscribe_events(...):`
+- `create_event_payload()` builds standardized event dicts with event_type, ticket_id, timestamp
+- EVENT_TYPES constant defines all valid event types: ticket_state_changed, agent_assigned, agent_completed, agent_failed, ticket_blocked
+- Redis pubsub mock: use `mock.MagicMock` (not AsyncMock) for `client.pubsub()` since it's a sync method returning a pubsub object
+- Async generator cleanup: must explicitly call `await gen.aclose()` after `break` to trigger `finally` block in tests
 
 ---
 
@@ -149,4 +154,18 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - Mock `publish_event` at the import site (`app.routers.transitions.publish_event`) not at definition site
   - Blocked state has empty ALLOWED_TRANSITIONS — all transitions from blocked require manual_override flag
   - Tests that span multiple routers (transitions + dependencies + notes + tickets) must override _get_session for all four
+---
+
+## 2026-03-15 - US-008
+- What was implemented: Redis event publisher and subscriber — added `subscribe_events()` async generator, `create_event_payload()` helper, `EVENT_TYPES` constant, Redis lifecycle management in FastAPI lifespan (close on shutdown).
+- Files changed:
+  - backend/app/redis_client.py (modified — added subscribe_events, create_event_payload, EVENT_TYPES)
+  - backend/app/main.py (modified — added close_redis to lifespan shutdown)
+  - backend/tests/test_us008_redis_events.py (new — 24 tests)
+  - prd.json (US-008 passes: true)
+- **Patterns added to Codebase Patterns:** subscribe_events usage, create_event_payload helper, EVENT_TYPES constant, pubsub mock pattern, async generator cleanup
+- **Learnings for future iterations:**
+  - `client.pubsub()` is a sync method on redis.asyncio — mock it with `MagicMock` not `AsyncMock`
+  - Async generator `finally` blocks don't run automatically on `break` in tests — need explicit `await gen.aclose()`
+  - To test FastAPI lifespan, mock both `init_db` and `close_redis` to avoid real DB/Redis connections
 ---
