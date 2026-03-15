@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import AppConfig, load_config
 from app.database import get_engine, init_db
+from app.routers.tickets import router as tickets_router
 
 config: AppConfig = load_config()
 engine = get_engine()
@@ -28,6 +29,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(tickets_router)
 
 
 @app.get("/api/health")

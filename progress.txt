@@ -18,6 +18,10 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - Models are in `backend/app/models.py` — import `Ticket`, `Note`, `Event`, `AgentRegistry`, `Setting`, `TicketDependency`
 - Use in-memory SQLite (`sqlite+aiosqlite:///:memory:`) for test fixtures
 - `init_db(engine)` creates all tables — called in FastAPI lifespan handler on startup
+- Pydantic schemas are in `backend/app/schemas.py` — use `TicketCreate`, `TicketUpdate`, `TicketResponse`, `TicketDetailResponse`, `NoteResponse`
+- Routers are in `backend/app/routers/` — each router defines its own `_get_session` dependency importing `engine` from `app.main`
+- To override DB session in tests: override the router's `_get_session` function via `app.dependency_overrides[_get_session]`
+- Use `ruff check --fix` to auto-fix import sorting (I001) and line length issues
 
 ---
 
@@ -71,4 +75,20 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - ruff import sorting (I001) requires stdlib imports alphabetically before third-party — `collections.abc` before `contextlib`
   - SQLAlchemy JSON column type works fine with SQLite via aiosqlite for storing lists/dicts
   - Use `expire_on_commit=False` in test sessions to avoid lazy-load issues after commit
+---
+
+## 2026-03-15 - US-004
+- What was implemented: Ticket CRUD API endpoints — POST /api/tickets, GET /api/tickets (with project/state filters), GET /api/tickets/{id} (with notes), PATCH /api/tickets/{id}, DELETE /api/tickets/{id}. Pydantic schemas for request/response validation. Router registered in main.py.
+- Files changed:
+  - backend/app/schemas.py (new — TicketCreate, TicketUpdate, TicketResponse, TicketDetailResponse, NoteResponse)
+  - backend/app/routers/__init__.py (new)
+  - backend/app/routers/tickets.py (new — 5 CRUD endpoints)
+  - backend/app/main.py (modified — registered tickets router)
+  - backend/tests/test_us004_ticket_crud.py (new — 20 tests)
+  - prd.json (US-004 passes: true)
+- **Patterns added to Codebase Patterns:** schemas location, router pattern with _get_session dependency, dependency override pattern for tests, ruff --fix
+- **Learnings for future iterations:**
+  - Router dependency `_get_session` imports `engine` from `app.main` at call time (lazy import) to avoid circular imports
+  - Test DB session override must target the router's `_get_session`, not `database.get_session`
+  - ruff auto-fix handles import sorting and line-length wrapping cleanly
 ---
