@@ -25,6 +25,8 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - Dependency router is at `backend/app/routers/dependencies.py` — uses same `_get_session` pattern as tickets router
 - When testing multiple routers together, override `_get_session` for ALL routers that may be called
 - Ticket state transitions past `to_do` are blocked if unresolved dependencies exist (enforced in tickets router PATCH)
+- Notes router is at `backend/app/routers/notes.py` — uses same `_get_session` pattern
+- SQLite timestamps lack sub-second precision — use `Note.id.desc()` as tiebreaker for ordering
 
 ---
 
@@ -110,4 +112,19 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - When testing endpoints that span multiple routers, must override `_get_session` for each router separately
   - BFS cycle detection works well for dependency graphs — uses visited set to avoid infinite loops
   - Dependency enforcement is in tickets router (PATCH), not in dependencies router — keeps single responsibility but couples them
+---
+
+## 2026-03-15 - US-006
+- What was implemented: Notes and comments API — POST /api/tickets/{id}/notes (create note), GET /api/tickets/{id}/notes (list notes descending). NoteCreate schema added. Notes router registered in main.py. Fixed note ordering in both notes and tickets routers to use id desc as tiebreaker.
+- Files changed:
+  - backend/app/schemas.py (modified — added NoteCreate)
+  - backend/app/routers/notes.py (new — 2 endpoints)
+  - backend/app/routers/tickets.py (modified — fixed note ordering tiebreaker)
+  - backend/app/main.py (modified — registered notes router)
+  - backend/tests/test_us006_notes.py (new — 10 tests including e2e golden path)
+  - prd.json (US-006 passes: true)
+- **Patterns added to Codebase Patterns:** notes router location, SQLite timestamp ordering tiebreaker
+- **Learnings for future iterations:**
+  - SQLite `func.now()` server_default has only second-level precision — notes created in rapid succession get identical timestamps. Always add `id.desc()` as secondary sort.
+  - The notes router follows the exact same pattern as tickets/dependencies routers — _get_session dependency, 404 check for ticket existence.
 ---
