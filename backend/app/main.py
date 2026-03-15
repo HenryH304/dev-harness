@@ -10,6 +10,7 @@ from app.redis_client import close_redis
 from app.routers.agents import router as agents_router
 from app.routers.dependencies import router as dependencies_router
 from app.routers.notes import router as notes_router
+from app.routers.projects import router as projects_router
 from app.routers.tickets import router as tickets_router
 from app.routers.transitions import router as transitions_router
 from app.websocket import manager, redis_listener
@@ -47,6 +48,7 @@ app.include_router(dependencies_router)
 app.include_router(notes_router)
 app.include_router(transitions_router)
 app.include_router(agents_router)
+app.include_router(projects_router)
 
 
 @app.get("/api/health")
