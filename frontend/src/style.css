@@ -736,6 +736,109 @@ body {
   color: var(--color-danger);
 }
 
+/* Project management */
+.project-mgmt {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-lg);
+}
+
+.project-section-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  margin-bottom: var(--space-md);
+  color: var(--color-text);
+}
+
+.project-import-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.project-import-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.project-import-msg {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.project-import-msg--success {
+  color: var(--color-success);
+}
+
+.project-import-msg--error {
+  color: var(--color-danger);
+}
+
+.project-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-sm);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.project-item--active {
+  border-color: var(--color-primary);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.project-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.project-name {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.project-count {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* Board filter bar */
+.board-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  padding-bottom: 0;
+}
+
+.filter-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.filter-select {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family);
+  cursor: pointer;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
   .column {

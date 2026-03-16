@@ -4,10 +4,11 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Ticket
+from app.models import Setting, Ticket
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -21,12 +22,47 @@ class ProjectImportResponse(BaseModel):
     imported_count: int
 
 
+class ProjectInfo(BaseModel):
+    name: str
+    ticket_count: int
+
+
+class ProjectListResponse(BaseModel):
+    projects: list[ProjectInfo]
+    active_priority_project: str
+
+
 async def _get_session() -> AsyncSession:  # type: ignore[misc]
     """Get a database session using the app engine."""
     from app.main import engine
 
     async for session in get_session(engine):
         yield session
+
+
+@router.get("", response_model=ProjectListResponse)
+async def list_projects(
+    session: AsyncSession = Depends(_get_session),
+) -> ProjectListResponse:
+    """List all projects with ticket counts and active priority project."""
+    stmt = (
+        select(Ticket.project, func.count(Ticket.id).label("ticket_count"))
+        .group_by(Ticket.project)
+        .order_by(Ticket.project)
+    )
+    result = await session.execute(stmt)
+    projects = [
+        ProjectInfo(name=row.project, ticket_count=row.ticket_count)
+        for row in result.all()
+    ]
+
+    # Get active priority project from settings
+    setting = await session.get(Setting, "active_priority_project")
+    active = setting.value if setting else ""
+
+    return ProjectListResponse(
+        projects=projects, active_priority_project=active
+    )
 
 
 @router.post("/import", response_model=ProjectImportResponse)

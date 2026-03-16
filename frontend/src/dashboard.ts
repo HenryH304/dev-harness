@@ -3,6 +3,12 @@
  */
 
 import { apiGet, apiPost } from './api.js';
+import {
+  fetchProjects,
+  importProject,
+  renderProjectManagement,
+  setActivePriority,
+} from './project-management.js';
 import { renderSettingsPanel, saveSettings } from './settings-panel.js';
 import type { SettingsData } from './settings-panel.js';
 
@@ -90,6 +96,10 @@ export function renderDashboard(container: HTMLElement): void {
       <section class="dash-section" id="dash-controls">
         <h2 class="dash-section-title">Controls</h2>
         <div class="dash-section-body"></div>
+      </section>
+      <section class="dash-section dash-section--full" id="dash-projects">
+        <h2 class="dash-section-title">Project Management</h2>
+        <div class="dash-section-body"><p class="dash-loading">Loading...</p></div>
       </section>
       <section class="dash-section dash-section--full" id="dash-settings">
         <h2 class="dash-section-title">Settings</h2>
@@ -289,6 +299,32 @@ export async function loadDashboard(container: HTMLElement): Promise<void> {
 
   renderControls(controlsSection, agentsPaused, handleToggle);
   await refreshAll();
+
+  // Load project management
+  const projectsSection = document.querySelector('#dash-projects .dash-section-body') as HTMLElement;
+  async function loadProjectsPanel(): Promise<void> {
+    try {
+      const data = await fetchProjects();
+      renderProjectManagement(
+        projectsSection,
+        data.projects,
+        data.active_priority_project,
+        async (name, path) => {
+          const ok = await importProject(name, path);
+          if (ok) await loadProjectsPanel();
+          return ok;
+        },
+        async (name) => {
+          const ok = await setActivePriority(name);
+          if (ok) await loadProjectsPanel();
+          return ok;
+        },
+      );
+    } catch {
+      projectsSection.innerHTML = '<p class="dash-empty">Failed to load projects</p>';
+    }
+  }
+  await loadProjectsPanel();
 
   // Load settings panel
   const settingsSection = document.querySelector('#dash-settings .dash-section-body') as HTMLElement;

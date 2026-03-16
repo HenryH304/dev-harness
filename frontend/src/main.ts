@@ -9,6 +9,7 @@ import {
   fetchUnresolvedDeps,
   applyDependencyIcons,
 } from './dependency-icons.js';
+import { fetchProjects } from './project-management.js';
 import type { Ticket } from './types.js';
 import type { DepStatus } from './dependency-icons.js';
 
@@ -44,36 +45,93 @@ function renderShell(page: 'board' | 'dashboard'): void {
 async function loadBoard(): Promise<void> {
   renderShell('board');
   const content = document.getElementById('page-content')!;
-  content.classList.add('board');
+
+  // Add filter bar above board
+  const filterBar = document.createElement('div');
+  filterBar.className = 'board-filter-bar';
+  filterBar.innerHTML = `
+    <label class="filter-label" for="project-filter">Filter by project:</label>
+    <select class="filter-select" id="project-filter">
+      <option value="">All Projects</option>
+    </select>
+  `;
+  content.appendChild(filterBar);
+
+  const boardContainer = document.createElement('div');
+  boardContainer.className = 'board';
+  content.appendChild(boardContainer);
 
   const dot = document.getElementById('ws-dot')!;
   const label = document.getElementById('ws-label')!;
 
-  let tickets: Ticket[] = [];
+  let allTickets: Ticket[] = [];
   let depStatus: DepStatus = {};
+  let activeProject = '';
+  let selectedFilter = '';
+
   try {
-    const [ticketResp, deps] = await Promise.all([
+    const [ticketResp, deps, projectData] = await Promise.all([
       apiGet<Ticket[]>('/tickets'),
       fetchUnresolvedDeps(),
+      fetchProjects(),
     ]);
     if (ticketResp.ok) {
-      tickets = ticketResp.data;
+      allTickets = ticketResp.data;
     }
     depStatus = deps;
+    activeProject = projectData.active_priority_project;
+
+    // Populate filter dropdown
+    const select = filterBar.querySelector<HTMLSelectElement>('#project-filter')!;
+    for (const p of projectData.projects) {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = `${p.name} (${p.ticket_count})`;
+      if (p.name === activeProject) {
+        opt.textContent += ' ★';
+      }
+      select.appendChild(opt);
+    }
   } catch {
     // continue with empty tickets
   }
 
-  renderBoard(content, tickets);
-  applyDependencyIcons(content, depStatus);
-  setupDragDrop(content, tickets);
+  function getFilteredTickets(): Ticket[] {
+    if (!selectedFilter) return allTickets;
+    return allTickets.filter((t) => t.project === selectedFilter);
+  }
+
+  function rerenderBoard(): void {
+    const filtered = getFilteredTickets();
+    renderBoard(boardContainer, filtered);
+    applyDependencyIcons(boardContainer, depStatus);
+    setupDragDrop(boardContainer, filtered);
+  }
+
+  rerenderBoard();
+
+  // Filter change handler
+  const select = filterBar.querySelector<HTMLSelectElement>('#project-filter')!;
+  select.addEventListener('change', () => {
+    selectedFilter = select.value;
+    rerenderBoard();
+  });
 
   const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
   const wsClient = createWsClient(wsUrl);
-  setupRealtimeUpdates(wsClient, content, dot, label, tickets, async (b, _t) => {
+  setupRealtimeUpdates(wsClient, boardContainer, dot, label, allTickets, async (b, _t) => {
+    allTickets = _t;
     const freshDeps = await fetchUnresolvedDeps();
-    applyDependencyIcons(b, freshDeps);
-    setupDragDrop(b, _t);
+    depStatus = freshDeps;
+    if (selectedFilter) {
+      const filtered = _t.filter((t) => t.project === selectedFilter);
+      renderBoard(b, filtered);
+      applyDependencyIcons(b, freshDeps);
+      setupDragDrop(b, filtered);
+    } else {
+      applyDependencyIcons(b, freshDeps);
+      setupDragDrop(b, _t);
+    }
   });
 }
 
