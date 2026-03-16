@@ -64,6 +64,16 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - Install `jsdom` as devDependency for DOM-based frontend tests
 - Realtime updates module is at `frontend/src/realtime.ts` — `setupRealtimeUpdates()`, `applyStateChange()`
 - Use `vi.restoreAllMocks()` in beforeEach/afterEach for vitest test isolation when using spyOn
+- Detail panel module is at `frontend/src/detail-panel.ts` — `openDetailPanel(ticketId)`, `closeDetailPanel()`, `renderDetailPanel(ticket, deps)`
+- Detail panel fetches GET /api/tickets/{id} (with notes) and GET /api/tickets/{id}/dependencies
+- Card click handlers are added in `board.ts` `renderCard()` — calls `openDetailPanel(ticket.id)`
+- Drag-drop module is at `frontend/src/drag-drop.ts` — `setupDragDrop()`, `isValidTransition()`, `showUndoToast()`
+- `setupDragDrop()` must be re-called after every `renderBoard()` — use `onRender` callback in `setupRealtimeUpdates()`
+- `realtime.ts` `setupRealtimeUpdates()` accepts optional `onRender` callback for post-render hooks
+- Dashboard router is at `backend/app/routers/dashboard.py` — GET agents/metrics/timeouts/blocked, POST force-unlock/toggle-agents
+- Frontend uses hash-based routing (`#/dashboard`, `#/`) — `handleRoute()` in main.ts
+- Dashboard module is at `frontend/src/dashboard.ts` — `renderDashboard()`, `loadDashboard()`, section renderers
+- Navigation links in header use `data-page` attribute for routing
 
 ---
 
@@ -365,4 +375,56 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - `applyStateChange()` is the fallback when API re-fetch fails — updates ticket state locally
   - vi.spyOn mocks leak between tests in vitest — always call `vi.restoreAllMocks()` in beforeEach/afterEach
   - WS URL must be dynamically constructed from `location.protocol` and `location.host` for production builds
+---
+
+## 2026-03-15 - US-020
+- What was implemented: Ticket detail panel — clicking a ticket card opens a side panel (overlay) showing full ticket details. Panel shows: title, description, acceptance criteria (with checkboxes), state, priority, project, branch name, current agent, agent attempt counts, timeout counts per type, review_rejection_count, notes in reverse chronological order, and dependency list (blocked_by / blocks). Close button and overlay click dismiss the panel. Fetches ticket detail and dependencies from API.
+- Files changed:
+  - frontend/src/detail-panel.ts (new — renderDetailPanel, openDetailPanel, closeDetailPanel, formatNotes, formatDependencies, TicketDetail/Note/DependencyList types)
+  - frontend/src/detail-panel.test.ts (new — 22 tests: 14 renderDetailPanel, 3 openDetailPanel, 2 closeDetailPanel, 1 formatNotes, 2 formatDependencies)
+  - frontend/src/board.ts (modified — added click handler calling openDetailPanel, imported detail-panel module)
+  - frontend/src/style.css (modified — added detail panel overlay, panel, close button, meta, stats grid, notes, dependencies styles)
+  - prd.json (US-020 passes: true)
+- **Patterns added to Codebase Patterns:** detail panel module location, card click handler location, detail panel API endpoints
+- **Learnings for future iterations:**
+  - Detail panel fetches both ticket detail (GET /api/tickets/{id}) and dependencies (GET /api/tickets/{id}/dependencies) — dependencies are best-effort (panel still renders if dependency fetch fails)
+  - Side panel pattern uses fixed overlay with flex justify-end — clicking outside the panel closes it
+  - Card click handlers are in board.ts renderCard() — keep event handling close to where elements are created
+---
+
+## 2026-03-16 - US-021
+- What was implemented: Manual drag-and-drop state changes — cards are draggable between columns with HTML5 Drag and Drop API. Invalid transitions show red border visual feedback, valid targets show green. On drop, calls POST /api/tickets/{id}/transition with manual_override flag and auto-generated note. Undo toast appears for 5 seconds after successful drop. Ghost card visual (opacity 0.4, dashed border) during drag. Re-initializes drag-drop after realtime board re-renders via onRender callback.
+- Files changed:
+  - frontend/src/drag-drop.ts (new — setupDragDrop, isValidTransition, ALLOWED_TRANSITIONS, showUndoToast, hideUndoToast)
+  - frontend/src/drag-drop.test.ts (new — 22 tests: 5 isValidTransition, 2 ALLOWED_TRANSITIONS, 8 setupDragDrop, 5 showUndoToast, 2 hideUndoToast)
+  - frontend/src/main.ts (modified — wired up setupDragDrop on initial load and on realtime re-render)
+  - frontend/src/realtime.ts (modified — added optional onRender callback after board re-render)
+  - frontend/src/style.css (modified — added card--dragging, column--drop-target, column--invalid-drop, undo-toast styles)
+  - prd.json (US-021 passes: true)
+- **Patterns added to Codebase Patterns:** drag-drop module location, onRender callback for post-render hooks
+- **Learnings for future iterations:**
+  - Drag-drop module is at `frontend/src/drag-drop.ts` — `setupDragDrop()`, `isValidTransition()`, `showUndoToast()`
+  - `setupDragDrop()` must be called after every `renderBoard()` since it replaces all DOM elements — use `onRender` callback in `setupRealtimeUpdates()`
+  - ALLOWED_TRANSITIONS must mirror backend's transitions.py ALLOWED_TRANSITIONS — keep in sync
+  - Blocked state allows transition to any state (manual override) on the frontend side
+  - HTML5 drag events need `e.preventDefault()` on dragover to allow drop
+---
+
+## 2026-03-16 - US-022
+- What was implemented: Admin dashboard with agent monitor, workflow metrics, timeout analytics, blocked tickets view, and manual controls (force unlock, pause/resume agents). Backend: 6 new API endpoints in dashboard router (GET agents/metrics/timeouts/blocked, POST force-unlock/toggle-agents). Frontend: dashboard page at #/dashboard with hash-based routing, navigation links in header, section renderers for each data type. Pause/resume state stored in settings table.
+- Files changed:
+  - backend/app/routers/dashboard.py (new — 6 endpoints, Pydantic response models)
+  - backend/app/main.py (modified — registered dashboard router)
+  - backend/tests/test_us022_dashboard.py (new — 14 tests)
+  - frontend/src/dashboard.ts (new — renderDashboard, loadDashboard, section renderers, types)
+  - frontend/src/dashboard.test.ts (new — 12 tests)
+  - frontend/src/main.ts (modified — hash routing, navigation, dashboard page loading)
+  - frontend/src/style.css (modified — navigation styles, dashboard grid/section/table/metric/timeout/blocked/control styles, responsive)
+  - prd.json (US-022 passes: true)
+- **Patterns added to Codebase Patterns:** dashboard router location, hash-based routing, dashboard module location, navigation data-page attribute
+- **Learnings for future iterations:**
+  - Hash-based routing (`#/dashboard`, `#/`) is simplest for SPA without server-side routing — `hashchange` event handles navigation
+  - Dashboard sections load data in parallel with `Promise.all` for better performance
+  - Force-unlock endpoint adds a system note for audit trail — follows same pattern as agent release in agents router
+  - Pause/resume toggle uses settings table (key: `agents_paused`) — agent pickup should check this setting
 ---
