@@ -384,6 +384,57 @@ body {
   white-space: pre-wrap;
 }
 
+/* Drag and drop */
+.card--dragging {
+  opacity: 0.4;
+  border: 1px dashed var(--color-primary);
+}
+
+.column--drop-target {
+  border-color: var(--color-success);
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.column--invalid-drop {
+  border-color: var(--color-danger);
+  background: rgba(239, 68, 68, 0.05);
+  cursor: not-allowed;
+}
+
+/* Undo toast */
+.undo-toast {
+  position: fixed;
+  bottom: var(--space-lg);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.undo-toast button {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+.undo-toast button:hover {
+  background: var(--color-primary-hover);
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
   .column {

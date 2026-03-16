@@ -27,7 +27,8 @@ export function setupRealtimeUpdates(
   boardEl: HTMLElement,
   dotEl: HTMLElement,
   labelEl: HTMLElement,
-  tickets: Ticket[]
+  tickets: Ticket[],
+  onRender?: (boardEl: HTMLElement, tickets: Ticket[]) => void
 ): void {
   let currentTickets = [...tickets];
 
@@ -62,6 +63,9 @@ export function setupRealtimeUpdates(
     }
 
     renderBoard(boardEl, currentTickets);
+    if (onRender) {
+      onRender(boardEl, currentTickets);
+    }
   });
 
   wsClient.connect();

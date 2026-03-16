@@ -3,6 +3,7 @@ import { apiGet } from './api.js';
 import { renderBoard } from './board.js';
 import { createWsClient } from './ws.js';
 import { setupRealtimeUpdates } from './realtime.js';
+import { setupDragDrop } from './drag-drop.js';
 import type { Ticket } from './types.js';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
@@ -35,10 +36,13 @@ async function loadBoard(): Promise<void> {
   }
 
   renderBoard(board, tickets);
+  setupDragDrop(board, tickets);
 
   const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
   const wsClient = createWsClient(wsUrl);
-  setupRealtimeUpdates(wsClient, board, dot, label, tickets);
+  setupRealtimeUpdates(wsClient, board, dot, label, tickets, (b, t) => {
+    setupDragDrop(b, t);
+  });
 }
 
 loadBoard();
