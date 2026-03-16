@@ -428,3 +428,19 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - Force-unlock endpoint adds a system note for audit trail — follows same pattern as agent release in agents router
   - Pause/resume toggle uses settings table (key: `agents_paused`) — agent pickup should check this setting
 ---
+
+## 2026-03-16 - US-023
+- What was implemented: Settings panel in admin dashboard — new `settings-panel.ts` module with `renderSettingsPanel()` and `saveSettings()`. Settings section added to dashboard skeleton (full-width). Loads current settings from GET /api/settings, renders editable fields for all 7 settings (4 agent timeouts, max_agents_system, review_rejection_threshold, active_priority_project). Save button calls PATCH /api/settings directly. Success/error message feedback after save.
+- Files changed:
+  - frontend/src/settings-panel.ts (new — renderSettingsPanel, saveSettings, SettingsData type)
+  - frontend/src/settings-panel.test.ts (new — 8 tests)
+  - frontend/src/dashboard.ts (modified — added settings section to skeleton, wired up settings loading)
+  - frontend/src/dashboard.test.ts (modified — added settings section assertion)
+  - frontend/src/style.css (modified — added settings form, field, input, actions, message styles)
+  - prd.json (US-023 passes: true)
+- **Patterns added to Codebase Patterns:** None - no new patterns discovered
+- **Learnings for future iterations:**
+  - Settings panel uses direct `fetch()` rather than `apiPatch` to keep the module self-contained — `saveSettings()` handles its own fetch
+  - `vi.fn()` returns `undefined` by default — when mocking async callbacks like `onSave`, use `vi.fn().mockResolvedValue(true)` to avoid unhandled promise rejections in jsdom
+  - `dash-section--full` with `grid-column: 1 / -1` spans full width in the 2-column dashboard grid
+---

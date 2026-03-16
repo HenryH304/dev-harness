@@ -185,10 +185,12 @@ describe('renderDashboard', () => {
     expect(el.querySelector('#dash-timeouts')).not.toBeNull();
     expect(el.querySelector('#dash-blocked')).not.toBeNull();
     expect(el.querySelector('#dash-controls')).not.toBeNull();
+    expect(el.querySelector('#dash-settings')).not.toBeNull();
     expect(el.textContent).toContain('Active Agents');
     expect(el.textContent).toContain('Workflow Metrics');
     expect(el.textContent).toContain('Timeout Analytics');
     expect(el.textContent).toContain('Blocked Tickets');
     expect(el.textContent).toContain('Controls');
+    expect(el.textContent).toContain('Settings');
   });
 });

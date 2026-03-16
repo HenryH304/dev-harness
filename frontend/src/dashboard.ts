@@ -3,6 +3,8 @@
  */
 
 import { apiGet, apiPost } from './api.js';
+import { renderSettingsPanel, saveSettings } from './settings-panel.js';
+import type { SettingsData } from './settings-panel.js';
 
 // --- Types ---
 
@@ -88,6 +90,10 @@ export function renderDashboard(container: HTMLElement): void {
       <section class="dash-section" id="dash-controls">
         <h2 class="dash-section-title">Controls</h2>
         <div class="dash-section-body"></div>
+      </section>
+      <section class="dash-section dash-section--full" id="dash-settings">
+        <h2 class="dash-section-title">Settings</h2>
+        <div class="dash-section-body"><p class="dash-loading">Loading...</p></div>
       </section>
     </div>
   `;
@@ -283,4 +289,17 @@ export async function loadDashboard(container: HTMLElement): Promise<void> {
 
   renderControls(controlsSection, agentsPaused, handleToggle);
   await refreshAll();
+
+  // Load settings panel
+  const settingsSection = document.querySelector('#dash-settings .dash-section-body') as HTMLElement;
+  try {
+    const settingsResp = await apiGet<{ settings: SettingsData }>('/settings');
+    if (settingsResp.ok) {
+      renderSettingsPanel(settingsSection, settingsResp.data.settings, async (updated) => {
+        return saveSettings(updated);
+      });
+    }
+  } catch {
+    settingsSection.innerHTML = '<p class="dash-empty">Failed to load settings</p>';
+  }
 }
