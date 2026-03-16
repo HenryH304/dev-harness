@@ -54,6 +54,9 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - `check_agent_timeouts(session_factory)` is a standalone async function (not an endpoint) — call from background task
 - Frontend tests: `npx vitest run` from frontend/ directory
 - Frontend typecheck: `npx tsc --noEmit` from frontend/
+- Dependency icons module is at `frontend/src/dependency-icons.ts` — `fetchUnresolvedDeps()`, `applyDependencyIcons()`, `removeDependencyIcons()`
+- Bulk dependency endpoint: GET /api/dependencies/unresolved — returns `{ [ticket_id]: [dep_ticket_id, ...] }` for unresolved deps only
+- `deps_router` is a second router in `backend/app/routers/dependencies.py` with prefix `/api/dependencies`
 - Frontend build: `npm run build` from frontend/ — produces dist/ for nginx
 - TypeScript `erasableSyntaxOnly` is enabled — no parameter properties, enums, or namespaces
 - API client is at `frontend/src/api.ts` — `apiGet`, `apiPost`, `apiPatch`, `apiDelete` all return `ApiResponse<T>`
@@ -74,6 +77,9 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
 - Frontend uses hash-based routing (`#/dashboard`, `#/`) — `handleRoute()` in main.ts
 - Dashboard module is at `frontend/src/dashboard.ts` — `renderDashboard()`, `loadDashboard()`, section renderers
 - Navigation links in header use `data-page` attribute for routing
+- Notification service is at `backend/app/notifications.py` — `NotificationAlert`, `build_alert`, `send_alert`, `notification_listener`, `enrich_event`
+- `notification_listener()` runs as background task in lifespan — subscribes to `ticket:events`, filters for `ticket_blocked`
+- `ticket_blocked` events include title, project, review_rejection_count, last_failure_note in payload (enriched in agents.py)
 
 ---
 
@@ -443,4 +449,37 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - Settings panel uses direct `fetch()` rather than `apiPatch` to keep the module self-contained — `saveSettings()` handles its own fetch
   - `vi.fn()` returns `undefined` by default — when mocking async callbacks like `onSave`, use `vi.fn().mockResolvedValue(true)` to avoid unhandled promise rejections in jsdom
   - `dash-section--full` with `grid-column: 1 / -1` spans full width in the 2-column dashboard grid
+---
+
+## 2026-03-16 - US-024
+- What was implemented: Dependency visualisation on board — lock icon (🔒) on cards with unresolved dependencies, tooltip listing blocking ticket IDs. Backend: new GET /api/dependencies/unresolved endpoint returns bulk map of ticket_id → unresolved dep IDs. Frontend: new `dependency-icons.ts` module with `fetchUnresolvedDeps()`, `applyDependencyIcons()`, `removeDependencyIcons()`. Icons applied after initial render and on every realtime re-render (automatic unblocking when deps move to done).
+- Files changed:
+  - backend/app/routers/dependencies.py (modified — added `deps_router` with `/api/dependencies/unresolved` endpoint)
+  - backend/app/main.py (modified — registered `deps_router`)
+  - backend/tests/test_us024_dependency_viz.py (new — 5 tests)
+  - frontend/src/dependency-icons.ts (new — fetchUnresolvedDeps, applyDependencyIcons, removeDependencyIcons)
+  - frontend/src/dependency-icons.test.ts (new — 9 tests)
+  - frontend/src/main.ts (modified — wired up dependency icons on load and realtime re-render)
+  - frontend/src/style.css (modified — added dep-lock-icon styles)
+  - prd.json (US-024 passes: true)
+- **Patterns added to Codebase Patterns:** dependency-icons module location, bulk dependency endpoint, deps_router location
+- **Learnings for future iterations:**
+  - Used a second router (`deps_router`) in the same file for the `/api/dependencies` prefix since the existing router uses `/api/tickets` prefix
+  - `applyDependencyIcons` is a post-render decoration — avoids changing renderCard/renderBoard signatures
+  - Automatic unblocking works via realtime re-render: on state change event, deps are re-fetched and icons re-applied
+---
+
+## 2026-03-16 - US-025
+- What was implemented: Henry alert notifications for blocked tickets — notification service subscribes to Redis `ticket:events` channel, filters for `ticket_blocked` events, enriches with ticket details from DB, and logs alerts to `notifications.log` file (fallback for OpenClaw). Alert includes ticket id, title, project, review_rejection_count, last failure note. Enhanced `ticket_blocked` event payload in agents.py to include title, project, and last_failure_note. Notification listener runs as background task in FastAPI lifespan.
+- Files changed:
+  - backend/app/notifications.py (new — NotificationAlert, build_alert, send_alert, enrich_event, notification_listener)
+  - backend/app/main.py (modified — added notification_listener background task in lifespan)
+  - backend/app/routers/agents.py (modified — enriched ticket_blocked event payload with title, project, last_failure_note)
+  - backend/tests/test_us025_notifications.py (new — 11 tests: 3 build_alert, 3 send_alert, 3 notification_listener, 2 enrich_event)
+  - prd.json (US-025 passes: true)
+- **Patterns added to Codebase Patterns:** notification service location, notification_listener background task, ticket_blocked event enrichment
+- **Learnings for future iterations:**
+  - mypy strict mode doesn't accept `dict[str, object]` with `int()` cast — use `dict[str, Any]` for event payloads
+  - Enriching events at the publisher (agents.py) is preferred over DB queries in the listener — avoids race conditions and reduces coupling
+  - Notification log file uses append mode — safe for concurrent writes from background task
 ---
