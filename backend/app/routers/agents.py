@@ -345,8 +345,11 @@ async def fail_ticket(
         blocked_payload: dict[str, Any] = {
             "event_type": "ticket_blocked",
             "ticket_id": ticket_id,
+            "title": ticket.title,
+            "project": ticket.project,
             "agent_id": agent_id,
             "review_rejection_count": ticket.review_rejection_count,
+            "last_failure_note": note_content,
             "reason": payload.reason,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }

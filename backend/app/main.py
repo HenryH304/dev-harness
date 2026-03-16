@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import AppConfig, load_config
 from app.database import get_engine, init_db
+from app.notifications import notification_listener
 from app.redis_client import close_redis
 from app.routers.agents import router as agents_router
 from app.routers.dashboard import router as dashboard_router
@@ -29,8 +30,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     await init_db(engine)
     listener_task = asyncio.create_task(redis_listener())
+    notif_task = asyncio.create_task(notification_listener())
     yield
     listener_task.cancel()
+    notif_task.cancel()
     await close_redis()
     await engine.dispose()
 
