@@ -9,6 +9,7 @@ from app.database import get_engine, init_db
 from app.redis_client import close_redis
 from app.routers.agents import router as agents_router
 from app.routers.dashboard import router as dashboard_router
+from app.routers.dependencies import deps_router
 from app.routers.dependencies import router as dependencies_router
 from app.routers.notes import router as notes_router
 from app.routers.projects import router as projects_router
@@ -48,6 +49,7 @@ app.add_middleware(
 app.include_router(tickets_router)
 app.include_router(dashboard_router)
 app.include_router(dependencies_router)
+app.include_router(deps_router)
 app.include_router(notes_router)
 app.include_router(transitions_router)
 app.include_router(agents_router)

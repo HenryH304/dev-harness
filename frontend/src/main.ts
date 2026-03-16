@@ -5,7 +5,12 @@ import { createWsClient } from './ws.js';
 import { setupRealtimeUpdates } from './realtime.js';
 import { setupDragDrop } from './drag-drop.js';
 import { loadDashboard } from './dashboard.js';
+import {
+  fetchUnresolvedDeps,
+  applyDependencyIcons,
+} from './dependency-icons.js';
 import type { Ticket } from './types.js';
+import type { DepStatus } from './dependency-icons.js';
 
 const appEl = document.querySelector<HTMLDivElement>('#app')!;
 
@@ -45,22 +50,30 @@ async function loadBoard(): Promise<void> {
   const label = document.getElementById('ws-label')!;
 
   let tickets: Ticket[] = [];
+  let depStatus: DepStatus = {};
   try {
-    const response = await apiGet<Ticket[]>('/tickets');
-    if (response.ok) {
-      tickets = response.data;
+    const [ticketResp, deps] = await Promise.all([
+      apiGet<Ticket[]>('/tickets'),
+      fetchUnresolvedDeps(),
+    ]);
+    if (ticketResp.ok) {
+      tickets = ticketResp.data;
     }
+    depStatus = deps;
   } catch {
     // continue with empty tickets
   }
 
   renderBoard(content, tickets);
+  applyDependencyIcons(content, depStatus);
   setupDragDrop(content, tickets);
 
   const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
   const wsClient = createWsClient(wsUrl);
-  setupRealtimeUpdates(wsClient, content, dot, label, tickets, (b, t) => {
-    setupDragDrop(b, t);
+  setupRealtimeUpdates(wsClient, content, dot, label, tickets, async (b, _t) => {
+    const freshDeps = await fetchUnresolvedDeps();
+    applyDependencyIcons(b, freshDeps);
+    setupDragDrop(b, _t);
   });
 }
 

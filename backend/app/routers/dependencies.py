@@ -14,6 +14,7 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/api/tickets", tags=["dependencies"])
+deps_router = APIRouter(prefix="/api/dependencies", tags=["dependencies"])
 
 
 async def _get_session() -> AsyncSession:  # type: ignore[misc]
@@ -196,3 +197,39 @@ async def get_dependencies(
     ]
 
     return DependencyListResponse(blocked_by=blocked_by, blocks=blocks)
+
+
+@deps_router.get("/unresolved")
+async def get_unresolved_dependencies(
+    session: AsyncSession = Depends(_get_session),
+) -> dict[str, list[int]]:
+    """Return a map of ticket_id -> list of unresolved dependency ticket IDs.
+
+    Only includes tickets that have at least one dependency not in 'done' state.
+    """
+    # Get all dependencies
+    result = await session.execute(
+        select(TicketDependency.ticket_id, TicketDependency.depends_on_ticket_id)
+    )
+    all_deps = result.all()
+    if not all_deps:
+        return {}
+
+    # Get states of all dependency target tickets
+    dep_target_ids = {row[1] for row in all_deps}
+    states_result = await session.execute(
+        select(Ticket.id, Ticket.state).where(Ticket.id.in_(dep_target_ids))
+    )
+    state_map: dict[int, str] = {row[0]: row[1] for row in states_result.all()}
+
+    # Build unresolved map
+    unresolved: dict[str, list[int]] = {}
+    for ticket_id, depends_on_id in all_deps:
+        dep_state = state_map.get(depends_on_id)
+        if dep_state != "done":
+            key = str(ticket_id)
+            if key not in unresolved:
+                unresolved[key] = []
+            unresolved[key].append(depends_on_id)
+
+    return unresolved
