@@ -483,3 +483,36 @@ Started: Sun, 15 Mar 2026 21:25:11 GMT
   - Enriching events at the publisher (agents.py) is preferred over DB queries in the listener — avoids race conditions and reduces coupling
   - Notification log file uses append mode — safe for concurrent writes from background task
 ---
+
+## 2026-03-16 - US-026
+- What was implemented: Project management — import and priority. Backend: new GET /api/projects endpoint returns all projects with ticket counts and active priority project. Frontend: new `project-management.ts` module with import form (project name + prd.json path), project list with ticket counts, set active priority button. Dashboard: new "Project Management" section. Board: project filter dropdown above columns, active priority project marked with star in dropdown.
+- Files changed:
+  - backend/app/routers/projects.py (modified — added GET /api/projects endpoint, ProjectInfo/ProjectListResponse schemas)
+  - backend/tests/test_us026_project_management.py (new — 7 tests)
+  - frontend/src/project-management.ts (new — renderProjectManagement, fetchProjects, importProject, setActivePriority)
+  - frontend/src/project-management.test.ts (new — 11 tests)
+  - frontend/src/dashboard.ts (modified — added project management section, wired up import/priority callbacks)
+  - frontend/src/main.ts (modified — added board filter bar with project dropdown, filter-on-change logic)
+  - frontend/src/style.css (modified — added project management, filter bar styles)
+  - prd.json (US-026 passes: true)
+- **Patterns added to Codebase Patterns:** None - no new patterns discovered
+- **Learnings for future iterations:**
+  - Project list endpoint uses SQLAlchemy `func.count` with `group_by` to get ticket counts per project
+  - Active priority project is stored in the settings table (key: `active_priority_project`) — reuses existing settings infrastructure
+  - Board filter uses a separate `boardContainer` div inside `page-content` so the filter bar stays above the columns
+  - `vi.fn()` mocks need explicit type casting for strict TypeScript — use `as (args) => ReturnType` pattern
+---
+
+## 2026-03-18 - US-027
+- What was implemented: Full end-to-end golden path test verifying the complete agent workflow — import prd.json → developer pickup/completion → reviewer failure with rejection tracking → 3 rejections blocking ticket → merger success to done. Also tests WebSocket broadcast, state transition event DB records, and event publishing throughout the workflow.
+- Files changed:
+  - backend/tests/test_us027_e2e_golden_path.py (new — 10 tests: import, developer pickup, developer completion, reviewer failure with notes, 3 rejections → blocked, merger → done, full golden path, WebSocket broadcast, WebSocket endpoint connect, state transition events)
+  - prd.json (US-027 passes: true)
+- **Patterns added to Codebase Patterns:** None - no new patterns discovered
+- **Learnings for future iterations:**
+  - WebSocket broadcast() takes a dict (not a string) — it json.dumps internally
+  - Event type stored in DB by transitions router is `ticket_state_changed` (not `state_change`)
+  - For e2e tests spanning the full pipeline, use a helper to directly assign agents (set ticket state + create AgentRegistry) rather than going through pickup endpoint for every agent type — avoids Redis lock mocking complexity
+  - When overriding `_get_session` in e2e tests, must include ALL routers that will be called in the test (agents, tickets, transitions, notes, projects, settings, dashboard, dependencies)
+  - Mock `notification_listener` in addition to `redis_listener` in app fixture to avoid background task startup
+---
