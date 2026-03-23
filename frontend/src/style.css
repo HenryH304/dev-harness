@@ -55,9 +55,10 @@ body {
 }
 
 #app {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .header {
@@ -108,16 +109,31 @@ body {
   gap: var(--space-md);
   padding: var(--space-lg);
   overflow-x: auto;
+  overflow-y: hidden;
   flex: 1;
+  align-items: flex-start;
+  /* Ensure horizontal scroll always works — never hide the scrollbar */
+  min-height: 0;
+}
+
+/* Page content fills remaining height so board can scroll properly */
+#page-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .column {
-  min-width: 280px;
+  min-width: 260px;
+  max-height: calc(100vh - 120px);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
 }
 
 .column-header {

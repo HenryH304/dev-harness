@@ -46,6 +46,9 @@ async function loadBoard(): Promise<void> {
   renderShell('board');
   const content = document.getElementById('page-content')!;
 
+  // Clear the "Loading..." placeholder before adding real content
+  content.innerHTML = '';
+
   // Add filter bar above board
   const filterBar = document.createElement('div');
   filterBar.className = 'board-filter-bar';

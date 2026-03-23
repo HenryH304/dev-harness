@@ -50,7 +50,10 @@ export function renderCard(ticket: Ticket): HTMLElement {
   if (ticket.current_agent) {
     const agent = document.createElement('span');
     agent.className = 'card-agent';
-    agent.textContent = `Agent: ${ticket.current_agent}`;
+    // Format agent ID: "developer-c9ffd296" → "🤖 Developer"
+    const agentType = ticket.current_agent.split('-')[0];
+    const agentLabel = agentType.charAt(0).toUpperCase() + agentType.slice(1);
+    agent.textContent = `🤖 ${agentLabel}`;
     meta.appendChild(agent);
   }
 

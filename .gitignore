@@ -12,3 +12,4 @@ dist/
 .ruff_cache/
 nohup.out
 *.db
+backend/.venv/
