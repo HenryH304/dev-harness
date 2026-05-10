@@ -8,11 +8,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.agents import get_agent_config
 from app.config import load_config
 from app.database import get_session
-from app.models import AgentRegistry, Note, Project, Setting, Ticket
+from app.models import AgentRegistry, Note, Project, Setting, Ticket, TicketDependency
 from app.worktree import WorktreeError, create_worktree
 from app.redis_client import get_redis, publish_event
 from app.schemas import AgentFailRequest, TicketResponse
@@ -145,11 +146,23 @@ async def pickup_ticket(
     # Find candidate tickets:
     # - In the agent type's column binding state
     # - Not already assigned (current_agent is NULL)
+    # - No dependency currently in 'blocked' state
     column_state = agent_config.column_binding
+    BlockedDep = aliased(Ticket)
+    has_blocked_dependency = (
+        select(TicketDependency.id)
+        .join(BlockedDep, BlockedDep.id == TicketDependency.depends_on_ticket_id)
+        .where(
+            TicketDependency.ticket_id == Ticket.id,
+            BlockedDep.state == "blocked",
+        )
+        .exists()
+    )
     query = (
         select(Ticket)
         .where(Ticket.state == column_state)
         .where(Ticket.current_agent.is_(None))
+        .where(~has_blocked_dependency)
     )
 
     # Order: priority project first, then by priority (ascending = higher priority)
@@ -405,8 +418,23 @@ async def fail_ticket(
     # Release agent
     await _release_agent(session, ticket)
 
+    # Merger failures always block — the agent already tried to resolve conflicts
+    # and couldn't proceed; human intervention is required.
+    if agent_type == "merger":
+        ticket.state = "blocked"
+        blocked_note = Note(
+            ticket_id=ticket_id,
+            author="system",
+            content=(
+                f"Ticket blocked: merger could not complete the merge.\n\n"
+                f"**Reason:** {payload.reason}\n\n"
+                "Manual intervention required."
+            ),
+            note_type="failure",
+        )
+        session.add(blocked_note)
     # Check if review rejection threshold reached
-    if (
+    elif (
         agent_type == "reviewer"
         and ticket.review_rejection_count >= config.review_rejection_threshold
     ):

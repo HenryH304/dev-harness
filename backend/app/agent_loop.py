@@ -104,6 +104,7 @@ async def try_pickup_and_run(agent_type: str) -> None:
         stale_files = {
             "reviewer": "review-failures.json",
             "tester": "test-failures.json",
+            "merger": "merge-failures.json",
         }
         stale_name = stale_files.get(agent_type)
         if stale_name:
@@ -166,15 +167,19 @@ async def try_pickup_and_run(agent_type: str) -> None:
             )
             return None
 
+    merge_failures: dict[str, Any] | None = None
+
     if agent_type == "reviewer":
         review_failures = _read_failures_file("review-failures.json", "reviewer")
     elif agent_type == "tester":
         test_failures = _read_failures_file("test-failures.json", "tester")
+    elif agent_type == "merger":
+        merge_failures = _read_failures_file("merge-failures.json", "merger")
 
     # ── Step 3: report result ──────────────────────────────────────────────
     async with session_factory() as session:
         try:
-            if spawn_result.success and review_failures is None and test_failures is None:
+            if spawn_result.success and review_failures is None and test_failures is None and merge_failures is None:
                 await complete_ticket(ticket_id, session=session)
             else:
                 if review_failures:
@@ -187,6 +192,17 @@ async def try_pickup_and_run(agent_type: str) -> None:
                         reason=review_failures.get("summary", "Review failed"),
                         suggested_fixes=suggested_fixes or None,
                         rework_note=review_failures.get("rework_note"),
+                    )
+                elif merge_failures:
+                    issues = merge_failures.get("issues", [])
+                    suggested_fixes = "\n".join(
+                        f"[{i.get('category', 'general')}] {i.get('detail', '')}"
+                        for i in issues
+                    )
+                    fail_req = AgentFailRequest(
+                        reason=merge_failures.get("summary", "Merge failed"),
+                        suggested_fixes=suggested_fixes or None,
+                        rework_note=merge_failures.get("rework_note"),
                     )
                 elif test_failures:
                     issues = test_failures.get("issues", [])
