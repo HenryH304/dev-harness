@@ -10,6 +10,7 @@ import {
   applyDependencyIcons,
 } from './dependency-icons.js';
 import { fetchProjects } from './project-management.js';
+import { openAddStoryModal } from './add-story-modal.js';
 import { fetchPrompts, renderPromptsPanel, savePrompt } from './prompts-panel.js';
 import { renderSettingsPanel, saveSettings } from './settings-panel.js';
 import type { SettingsData } from './settings-panel.js';
@@ -57,12 +58,16 @@ async function loadBoard(): Promise<void> {
 
   // Add filter bar above board
   const filterBar = document.createElement('div');
-  filterBar.className = 'board-filter-bar';
   filterBar.innerHTML = `
-    <label class="filter-label" for="project-filter">Filter by project:</label>
-    <select class="filter-select" id="project-filter">
-      <option value="">All Projects</option>
-    </select>
+    <div class="board-filter-bar">
+      <div class="board-filter-left">
+        <label class="filter-label" for="project-filter">Filter by project:</label>
+        <select class="filter-select" id="project-filter">
+          <option value="">All Projects</option>
+        </select>
+      </div>
+      <button class="dash-btn dash-btn-primary" id="add-story-btn">+ Add Story</button>
+    </div>
   `;
   content.appendChild(filterBar);
 
@@ -101,6 +106,15 @@ async function loadBoard(): Promise<void> {
       }
       select.appendChild(opt);
     }
+
+    // Wire "Add Story" button
+    document.querySelector<HTMLButtonElement>('#add-story-btn')!.addEventListener('click', () => {
+      openAddStoryModal({
+        defaultProject: selectedFilter,
+        projects: projectData.projects.map((p) => p.name),
+        onDone: () => loadBoard(),
+      });
+    });
   } catch {
     // continue with empty tickets
   }

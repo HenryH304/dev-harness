@@ -17,6 +17,7 @@ from app.routers.notes import router as notes_router
 from app.routers.projects import router as projects_router
 from app.routers.prompts import router as prompts_router
 from app.routers.features import router as features_router
+from app.routers.specs import router as specs_router
 from app.routers.settings import router as settings_router
 from app.routers.tickets import router as tickets_router
 from app.routers.transitions import router as transitions_router
@@ -67,6 +68,7 @@ app.include_router(agents_router)
 app.include_router(projects_router)
 app.include_router(prompts_router)
 app.include_router(features_router)
+app.include_router(specs_router)
 app.include_router(settings_router)
 
 

@@ -10,6 +10,8 @@ export interface PromptInfo {
 }
 
 const AGENT_LABELS: Record<string, string> = {
+  'spec-writer': 'SPEC Writer',
+  'story-writer': 'Story Writer',
   developer: 'Developer',
   reviewer: 'Reviewer',
   tester: 'Tester',
@@ -31,7 +33,7 @@ export function renderPromptsPanel(
   prompts: PromptInfo[],
   onSave: (agentType: string, content: string) => Promise<boolean>,
 ): void {
-  const order = ['developer', 'reviewer', 'tester', 'merger'];
+  const order = ['spec-writer', 'story-writer', 'developer', 'reviewer', 'tester', 'merger'];
   const known = order
     .map((t) => prompts.find((p) => p.agent_type === t))
     .filter((p): p is PromptInfo => p !== undefined);

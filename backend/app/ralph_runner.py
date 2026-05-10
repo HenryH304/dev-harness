@@ -179,3 +179,119 @@ async def spawn_prd_writer(
         success=exit_code == 0,
         exit_code=exit_code,
     )
+
+
+async def spawn_spec_writer(
+    spec_id: int,
+    project: str,
+    description: str,
+    spec_path: str,
+    amendment_request: str | None = None,
+    existing_spec: str | None = None,
+) -> SpawnResult:
+    """Run ralph in a temp directory to generate a specification document.
+
+    The spec-writer agent reads the feature description and writes a PRD
+    markdown document to spec_path.
+    """
+    import tempfile
+
+    spec_writer_path = Path(__file__).parent.parent / "prompts" / "spec-writer.md"
+    prompt = load_prompt(str(spec_writer_path))
+
+    work_dir = Path(tempfile.mkdtemp(prefix=f"spec-writer-{spec_id}-"))
+
+    input_prd: dict[str, Any] = {
+        "project": project,
+        "agentType": "spec-writer",
+        "featureDescription": description,
+        "specPath": spec_path,
+    }
+    if amendment_request:
+        input_prd["amendmentRequest"] = amendment_request
+    if existing_spec:
+        input_prd["existingSpec"] = existing_spec
+
+    (work_dir / "prd.json").write_text(json.dumps(input_prd, indent=2))
+    (work_dir / "prompt.md").write_text(prompt)
+    (work_dir / "progress.txt").write_text("")
+    (work_dir / "ralph.log").write_text("")
+
+    process = await asyncio.create_subprocess_exec(
+        "ralph",
+        "-timeout",
+        "600",
+        cwd=str(work_dir),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    exit_code = await process.wait()
+
+    return SpawnResult(
+        ticket_id=spec_id,
+        success=exit_code == 0,
+        exit_code=exit_code,
+    )
+
+
+async def spawn_story_converter(
+    spec_id: int,
+    project: str,
+    spec_content: str,
+    prd_output_path: str,
+) -> SpawnResult:
+    """Run the story-writer agent to convert a spec document into prd.json stories.
+
+    Passes the spec content as featureDescription so the story-writer can break
+    it into independently-completable user stories.
+    """
+    import tempfile
+
+    story_writer_path = Path(__file__).parent.parent / "prompts" / "story-writer.md"
+    prompt = load_prompt(str(story_writer_path))
+
+    work_dir = Path(tempfile.mkdtemp(prefix=f"story-converter-{spec_id}-"))
+
+    input_prd = {
+        "project": project,
+        "agentType": "story-writer",
+        "featureDescription": spec_content,
+        "outputPath": prd_output_path,
+        "userStories": [
+            {
+                "id": "SC-001",
+                "title": "Convert specification to user stories",
+                "description": "Convert the provided specification into user stories",
+                "acceptanceCriteria": [
+                    f"Write a valid prd.json to {prd_output_path}",
+                    "All stories are completable in one Ralph iteration",
+                    "Dependencies are correctly specified",
+                ],
+                "priority": 1,
+                "passes": False,
+            }
+        ],
+    }
+
+    (work_dir / "prd.json").write_text(json.dumps(input_prd, indent=2))
+    (work_dir / "prompt.md").write_text(prompt)
+    (work_dir / "progress.txt").write_text("")
+    (work_dir / "ralph.log").write_text("")
+
+    process = await asyncio.create_subprocess_exec(
+        "ralph",
+        "-timeout",
+        "600",
+        cwd=str(work_dir),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    exit_code = await process.wait()
+
+    return SpawnResult(
+        ticket_id=spec_id,
+        success=exit_code == 0,
+        exit_code=exit_code,
+    )

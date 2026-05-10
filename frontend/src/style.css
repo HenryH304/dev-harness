@@ -950,14 +950,7 @@ body {
   color: var(--color-text-muted);
 }
 
-/* Board filter bar */
-.board-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-md) var(--space-lg);
-  padding-bottom: 0;
-}
+/* Board filter bar — see "Board filter bar with Add Story button" section below */
 
 .filter-label {
   font-size: var(--font-size-sm);
@@ -1005,4 +998,227 @@ body {
   .dash-metric-grid {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* ─── Add Story Modal ─────────────────────────────────────────────────── */
+
+.add-story-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.add-story-modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  width: min(780px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.add-story-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.add-story-title {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  margin: 0;
+}
+
+.add-story-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0 var(--space-xs);
+}
+
+.add-story-close:hover {
+  color: var(--color-text);
+}
+
+.add-story-body {
+  padding: var(--space-md);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.add-story-form,
+.add-story-spec-wrap,
+.add-story-done,
+.add-story-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.add-story-label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.add-story-input,
+.add-story-textarea {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space-sm);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.add-story-input:focus,
+.add-story-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.add-story-textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.add-story-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.add-story-msg {
+  font-size: var(--font-size-sm);
+  min-height: 1.2em;
+  margin: 0;
+}
+
+.add-story-msg--error {
+  color: var(--color-danger, #ef4444);
+}
+
+/* Spinner */
+
+.add-story-spinner-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-xl) 0;
+}
+
+.add-story-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.add-story-spinner-msg {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Spec preview */
+
+.add-story-spec-pre {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: var(--space-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Amendment collapsible */
+
+.add-story-amend-details {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm);
+}
+
+.add-story-amend-summary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  user-select: none;
+}
+
+.add-story-amend-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+/* Done / Error */
+
+.add-story-done-msg {
+  font-size: var(--font-size-md);
+  font-weight: 500;
+}
+
+.add-story-error-step {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.add-story-error-detail {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-danger, #ef4444);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--space-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Board filter bar with Add Story button */
+
+.board-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.board-filter-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
 }
