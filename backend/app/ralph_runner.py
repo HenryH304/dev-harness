@@ -186,13 +186,14 @@ async def spawn_spec_writer(
     project: str,
     description: str,
     spec_path: str,
+    api_base_url: str,
     amendment_request: str | None = None,
     existing_spec: str | None = None,
 ) -> SpawnResult:
     """Run ralph in a temp directory to generate a specification document.
 
-    The spec-writer agent reads the feature description and writes a PRD
-    markdown document to spec_path.
+    The spec-writer agent reads task context from task.json, then calls the
+    dev-harness API to fetch current incomplete stories for the project.
     """
     import tempfile
 
@@ -206,6 +207,7 @@ async def spawn_spec_writer(
         "agentType": "spec-writer",
         "featureDescription": description,
         "specPath": spec_path,
+        "apiBaseUrl": api_base_url,
     }
     if amendment_request:
         input_prd["amendmentRequest"] = amendment_request

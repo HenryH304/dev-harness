@@ -72,6 +72,11 @@ def _read_spec(spec_path: str | None) -> str | None:
     return p.read_text() if p.is_file() else None
 
 
+def _api_base_url() -> str:
+    from app.main import config
+    return f"http://localhost:{config.port}"
+
+
 async def _import_stories(
     session: AsyncSession,
     project: str,
@@ -151,6 +156,7 @@ async def _run_spec_writing(spec_id: int) -> None:
             project=project,
             description=description,
             spec_path=spec_path,
+            api_base_url=_api_base_url(),
         )
     except Exception as exc:
         logger.exception("spec_writing spawn failed for spec %d", spec_id)
@@ -224,6 +230,7 @@ async def _run_amendment(spec_id: int, amendment: str) -> None:
             project=project,
             description=description,
             spec_path=spec_path or "",
+            api_base_url=_api_base_url(),
             amendment_request=amendment,
             existing_spec=existing_spec,
         )

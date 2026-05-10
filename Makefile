@@ -21,6 +21,8 @@ start:
 	docker-compose up -d --build
 	@echo "Frontend: http://localhost:8080"
 	@echo "Backend:  http://localhost:9080"
+	@URL=$$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('tunnels',[]); print(t[0]['public_url'] if t else '')" 2>/dev/null); \
+	if [ -n "$$URL" ]; then echo "Public URL: $$URL"; fi
 
 stop:
 	docker-compose down

@@ -47,6 +47,7 @@ async def create_ticket(
 async def list_tickets(
     project: str | None = None,
     state: str | None = None,
+    exclude_done: bool = False,
     session: AsyncSession = Depends(_get_session),
 ) -> list[Ticket]:
     stmt = select(Ticket)
@@ -54,6 +55,8 @@ async def list_tickets(
         stmt = stmt.where(Ticket.project == project)
     if state is not None:
         stmt = stmt.where(Ticket.state == state)
+    if exclude_done:
+        stmt = stmt.where(Ticket.state != "done")
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
