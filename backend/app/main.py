@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.agent_loop import agent_event_listener, heartbeat_loop, startup_scan
 from app.config import AppConfig, load_config
 from app.database import get_engine, init_db
 from app.notifications import notification_listener
@@ -14,6 +15,7 @@ from app.routers.dependencies import deps_router
 from app.routers.dependencies import router as dependencies_router
 from app.routers.notes import router as notes_router
 from app.routers.projects import router as projects_router
+from app.routers.prompts import router as prompts_router
 from app.routers.settings import router as settings_router
 from app.routers.tickets import router as tickets_router
 from app.routers.transitions import router as transitions_router
@@ -31,9 +33,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db(engine)
     listener_task = asyncio.create_task(redis_listener())
     notif_task = asyncio.create_task(notification_listener())
+    event_loop_task = asyncio.create_task(agent_event_listener())
+    heartbeat_task = asyncio.create_task(heartbeat_loop())
+    asyncio.create_task(startup_scan())
     yield
     listener_task.cancel()
     notif_task.cancel()
+    event_loop_task.cancel()
+    heartbeat_task.cancel()
     await close_redis()
     await engine.dispose()
 
@@ -57,6 +64,7 @@ app.include_router(notes_router)
 app.include_router(transitions_router)
 app.include_router(agents_router)
 app.include_router(projects_router)
+app.include_router(prompts_router)
 app.include_router(settings_router)
 
 

@@ -76,7 +76,7 @@ describe('renderCard', () => {
 
   it('renders assigned agent when present', () => {
     const card = renderCard(makeTicket({ current_agent: 'developer-abc' }));
-    expect(card.textContent).toContain('developer-abc');
+    expect(card.textContent).toContain('🤖 Developer');
   });
 
   it('does not show agent info when no agent assigned', () => {

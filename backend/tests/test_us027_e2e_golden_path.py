@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
-from app.models import AgentRegistry, Event, Ticket
+from app.models import AgentRegistry, Event, Project, Ticket  # noqa: F401
 
 # ── Fixtures ─────────────────────────────────────────────────────────
 
@@ -71,9 +71,17 @@ async def app(engine, session_factory, mock_publish):
         mock.patch("app.main.close_redis"),
         mock.patch("app.main.redis_listener"),
         mock.patch("app.main.notification_listener"),
+        mock.patch("app.main.agent_event_listener", new_callable=mock.AsyncMock),
+        mock.patch("app.main.heartbeat_loop", new_callable=mock.AsyncMock),
+        mock.patch("app.main.startup_scan", new_callable=mock.AsyncMock),
         mock.patch("app.routers.agents.publish_event", mock_publish),
         mock.patch("app.routers.transitions.publish_event", mock_publish),
+        mock.patch("app.routers.projects.publish_event", mock_publish),
         mock.patch("app.routers.agents.acquire_lock", return_value=True),
+        mock.patch(
+            "app.routers.agents.create_worktree",
+            return_value={"worktree_path": "/tmp/wt-test", "branch_name": "ticket/test"},
+        ),
     ):
         yield app
 
@@ -155,7 +163,7 @@ async def test_import_creates_tickets_in_todo(client, sample_prd_file):
     """Import a sample prd.json and verify tickets are created in to_do."""
     resp = await client.post(
         "/api/projects/import",
-        json={"project_name": "e2e-project", "prd_path": sample_prd_file},
+        json={"project_name": "e2e-project", "prd_path": sample_prd_file, "repo_path": "/tmp"},
     )
     assert resp.status_code == 200
     assert resp.json()["imported_count"] == 2
@@ -176,7 +184,7 @@ async def test_developer_pickup_moves_to_in_progress(
     # Import tickets
     await client.post(
         "/api/projects/import",
-        json={"project_name": "e2e-project", "prd_path": sample_prd_file},
+        json={"project_name": "e2e-project", "prd_path": sample_prd_file, "repo_path": "/tmp"},
     )
 
     # Developer picks up highest priority ticket
@@ -196,7 +204,7 @@ async def test_developer_completion_moves_to_ready_for_review(
     """Developer completion moves ticket from in_progress to ready_for_review."""
     await client.post(
         "/api/projects/import",
-        json={"project_name": "e2e-project", "prd_path": sample_prd_file},
+        json={"project_name": "e2e-project", "prd_path": sample_prd_file, "repo_path": "/tmp"},
     )
     # Pickup
     pickup_resp = await client.post("/api/agents/pickup/developer")
@@ -218,7 +226,7 @@ async def test_reviewer_failure_returns_to_todo_with_note(
     # Import and move through developer phase
     await client.post(
         "/api/projects/import",
-        json={"project_name": "e2e-project", "prd_path": sample_prd_file},
+        json={"project_name": "e2e-project", "prd_path": sample_prd_file, "repo_path": "/tmp"},
     )
     pickup_resp = await client.post("/api/agents/pickup/developer")
     ticket_id = pickup_resp.json()["id"]
@@ -257,7 +265,7 @@ async def test_three_review_rejections_blocks_ticket(
     # Import and move through developer phase
     await client.post(
         "/api/projects/import",
-        json={"project_name": "e2e-project", "prd_path": sample_prd_file},
+        json={"project_name": "e2e-project", "prd_path": sample_prd_file, "repo_path": "/tmp"},
     )
     pickup_resp = await client.post("/api/agents/pickup/developer")
     ticket_id = pickup_resp.json()["id"]
@@ -311,7 +319,7 @@ async def test_merger_success_moves_to_done(
     # Import and move through the full pipeline
     await client.post(
         "/api/projects/import",
-        json={"project_name": "e2e-project", "prd_path": sample_prd_file},
+        json={"project_name": "e2e-project", "prd_path": sample_prd_file, "repo_path": "/tmp"},
     )
     pickup_resp = await client.post("/api/agents/pickup/developer")
     ticket_id = pickup_resp.json()["id"]
@@ -355,7 +363,7 @@ async def test_full_golden_path_end_to_end(
     # 1. Import project
     resp = await client.post(
         "/api/projects/import",
-        json={"project_name": "golden", "prd_path": sample_prd_file},
+        json={"project_name": "golden", "prd_path": sample_prd_file, "repo_path": "/tmp"},
     )
     assert resp.status_code == 200
     assert resp.json()["imported_count"] == 2
@@ -527,7 +535,7 @@ async def test_state_transitions_generate_events_in_db(
     """State transitions via the transition endpoint create Event records."""
     await client.post(
         "/api/projects/import",
-        json={"project_name": "evt-project", "prd_path": sample_prd_file},
+        json={"project_name": "evt-project", "prd_path": sample_prd_file, "repo_path": "/tmp"},
     )
 
     # Get ticket ID

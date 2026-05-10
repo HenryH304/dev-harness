@@ -97,6 +97,18 @@ class Setting(Base):
     )
 
 
+class Project(Base):
+    """Project record storing the git repo path."""
+
+    __tablename__ = "projects"
+
+    name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    repo_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+
 class TicketDependency(Base):
     """Dependency relationship between tickets."""
 

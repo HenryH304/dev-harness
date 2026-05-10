@@ -1,5 +1,6 @@
 """Agent pickup, completion, failure, and timeout management."""
 
+import asyncio
 import datetime
 import uuid
 from typing import Any
@@ -11,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents import get_agent_config
 from app.config import load_config
 from app.database import get_session
-from app.models import AgentRegistry, Note, Setting, Ticket
+from app.models import AgentRegistry, Note, Project, Setting, Ticket
+from app.worktree import WorktreeError, create_worktree
 from app.redis_client import get_redis, publish_event
 from app.schemas import AgentFailRequest, TicketResponse
 
@@ -187,6 +189,27 @@ async def pickup_ticket(
             detail="All candidate tickets are locked by other agents",
         )
 
+    # Create git worktree for developer agents when none exists yet
+    if agent_type == "developer" and picked_ticket.worktree_path is None:
+        project_result = await session.execute(
+            select(Project).where(Project.name == picked_ticket.project)
+        )
+        project = project_result.scalar_one_or_none()
+        if project is not None:
+            try:
+                loop = asyncio.get_running_loop()
+                wt = await loop.run_in_executor(
+                    None, create_worktree, picked_ticket.id, project.repo_path
+                )
+                picked_ticket.worktree_path = wt["worktree_path"]
+                picked_ticket.branch_name = wt["branch_name"]
+            except WorktreeError as exc:
+                redis_client = await get_redis()
+                await redis_client.delete(f"lock:ticket:{picked_ticket.id}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to create worktree: {exc}"
+                )
+
     # Update ticket state
     next_state = PICKUP_NEXT_STATE.get(agent_type, column_state)
     previous_state = picked_ticket.state
@@ -323,6 +346,18 @@ async def fail_ticket(
         and ticket.review_rejection_count >= config.review_rejection_threshold
     ):
         ticket.state = "blocked"
+        blocked_note = Note(
+            ticket_id=ticket_id,
+            author="system",
+            content=(
+                f"Ticket blocked: review rejected "
+                f"{ticket.review_rejection_count} times "
+                f"(threshold: {config.review_rejection_threshold}).\n\n"
+                f"Last failure: {payload.reason}"
+            ),
+            note_type="failure",
+        )
+        session.add(blocked_note)
     else:
         ticket.state = "to_do"
 

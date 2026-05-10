@@ -7,7 +7,7 @@ from unittest import mock
 
 import pytest
 
-from app.worktree import WorktreeError, create_worktree, delete_worktree
+from app.worktree import WorktreeError, _RALPH_SETUP_SCRIPT, create_worktree, delete_worktree
 
 
 def _mock_git_side_effect(args: list[str], **kwargs: object) -> mock.MagicMock:
@@ -153,6 +153,68 @@ class TestCreateWorktree:
 
         with pytest.raises(WorktreeError, match="Git error"):
             create_worktree(ticket_id=1, project_path=project_path)
+
+    @mock.patch("app.worktree._RALPH_SETUP_SCRIPT")
+    @mock.patch("app.worktree.subprocess.run")
+    def test_calls_ralph_setup_script_when_present(
+        self, mock_run: mock.MagicMock, mock_script: mock.MagicMock, tmp_path: Path
+    ) -> None:
+        """Ralph setup script is invoked after worktree creation."""
+        project_path = str(tmp_path / "myproject")
+        os.makedirs(project_path)
+        mock_run.side_effect = _mock_git_side_effect
+        mock_script.exists.return_value = True
+        mock_script.__str__ = lambda _: "/fake/setup.sh"
+
+        create_worktree(ticket_id=99, project_path=project_path)
+
+        setup_calls = [
+            c for c in mock_run.call_args_list
+            if "/fake/setup.sh" in str(c)
+        ]
+        assert len(setup_calls) == 1
+
+    @mock.patch("app.worktree._RALPH_SETUP_SCRIPT")
+    @mock.patch("app.worktree.subprocess.run")
+    def test_ralph_setup_failure_does_not_raise(
+        self, mock_run: mock.MagicMock, mock_script: mock.MagicMock, tmp_path: Path
+    ) -> None:
+        """A non-zero exit from the setup script is logged but does not raise WorktreeError."""
+        project_path = str(tmp_path / "myproject")
+        os.makedirs(project_path)
+        mock_script.exists.return_value = True
+        mock_script.__str__ = lambda _: "/fake/setup.sh"
+
+        def side_effect(args: list[str], **kwargs: object) -> mock.MagicMock:
+            if "/fake/setup.sh" in str(args):
+                return mock.MagicMock(returncode=1, stdout="", stderr="template missing")
+            return _mock_git_side_effect(args, **kwargs)
+
+        mock_run.side_effect = side_effect
+
+        # Should not raise despite setup script failure
+        result = create_worktree(ticket_id=99, project_path=project_path)
+        assert "worktree_path" in result
+
+    @mock.patch("app.worktree._RALPH_SETUP_SCRIPT")
+    @mock.patch("app.worktree.subprocess.run")
+    def test_ralph_setup_skipped_when_script_absent(
+        self, mock_run: mock.MagicMock, mock_script: mock.MagicMock, tmp_path: Path
+    ) -> None:
+        """Setup script is not invoked when the template is not installed."""
+        project_path = str(tmp_path / "myproject")
+        os.makedirs(project_path)
+        mock_run.side_effect = _mock_git_side_effect
+        mock_script.exists.return_value = False
+        mock_script.__str__ = lambda _: "/fake/setup.sh"
+
+        create_worktree(ticket_id=99, project_path=project_path)
+
+        setup_calls = [
+            c for c in mock_run.call_args_list
+            if "/fake/setup.sh" in str(c)
+        ]
+        assert len(setup_calls) == 0
 
 
 class TestDeleteWorktree:

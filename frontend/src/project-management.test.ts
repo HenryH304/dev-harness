@@ -5,7 +5,7 @@ import type { ProjectInfo } from './project-management.js';
 
 describe('renderProjectManagement', () => {
   let container: HTMLElement;
-  let onImport: (projectName: string, prdPath: string) => Promise<boolean>;
+  let onImport: (projectName: string, prdPath: string, repoPath: string, createIfMissing: boolean) => Promise<boolean>;
   let onSetPriority: (projectName: string) => Promise<boolean>;
   let onImportMock: ReturnType<typeof vi.fn>;
   let onSetPriorityMock: ReturnType<typeof vi.fn>;
@@ -14,7 +14,7 @@ describe('renderProjectManagement', () => {
     container = document.createElement('div');
     onImportMock = vi.fn().mockResolvedValue(true);
     onSetPriorityMock = vi.fn().mockResolvedValue(true);
-    onImport = onImportMock as (projectName: string, prdPath: string) => Promise<boolean>;
+    onImport = onImportMock as (projectName: string, prdPath: string, repoPath: string, createIfMissing: boolean) => Promise<boolean>;
     onSetPriority = onSetPriorityMock as (projectName: string) => Promise<boolean>;
   });
 
@@ -26,8 +26,8 @@ describe('renderProjectManagement', () => {
 
   it('renders project list with ticket counts', () => {
     const projects: ProjectInfo[] = [
-      { name: 'alpha', ticket_count: 3 },
-      { name: 'beta', ticket_count: 1 },
+      { name: 'alpha', ticket_count: 3, repo_path: '/repos/alpha' },
+      { name: 'beta', ticket_count: 1, repo_path: '/repos/beta' },
     ];
     renderProjectManagement(container, projects, '', onImport, onSetPriority);
     const items = container.querySelectorAll('.project-item');
@@ -39,8 +39,8 @@ describe('renderProjectManagement', () => {
 
   it('highlights active priority project', () => {
     const projects: ProjectInfo[] = [
-      { name: 'alpha', ticket_count: 3 },
-      { name: 'beta', ticket_count: 1 },
+      { name: 'alpha', ticket_count: 3, repo_path: '/repos/alpha' },
+      { name: 'beta', ticket_count: 1, repo_path: '/repos/beta' },
     ];
     renderProjectManagement(container, projects, 'alpha', onImport, onSetPriority);
     const items = container.querySelectorAll('.project-item');
@@ -49,7 +49,7 @@ describe('renderProjectManagement', () => {
   });
 
   it('disables set priority button for active project', () => {
-    const projects: ProjectInfo[] = [{ name: 'alpha', ticket_count: 3 }];
+    const projects: ProjectInfo[] = [{ name: 'alpha', ticket_count: 3, repo_path: '/repos/alpha' }];
     renderProjectManagement(container, projects, 'alpha', onImport, onSetPriority);
     const btn = container.querySelector('.set-priority-btn') as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
@@ -60,20 +60,43 @@ describe('renderProjectManagement', () => {
     renderProjectManagement(container, [], '', onImport, onSetPriority);
     expect(container.querySelector('#import-project-name')).not.toBeNull();
     expect(container.querySelector('#import-prd-path')).not.toBeNull();
+    expect(container.querySelector('#import-repo-path')).not.toBeNull();
     expect(container.querySelector('#import-btn')).not.toBeNull();
   });
 
-  it('calls onImport with form values', async () => {
+  it('auto-fills repo path when project name is typed', () => {
+    renderProjectManagement(container, [], '', onImport, onSetPriority);
+    const nameInput = container.querySelector<HTMLInputElement>('#import-project-name')!;
+    const repoInput = container.querySelector<HTMLInputElement>('#import-repo-path')!;
+    nameInput.value = 'my-project';
+    nameInput.dispatchEvent(new Event('input'));
+    expect(repoInput.value).toBe('~/Projects/my-project');
+  });
+
+  it('clears repo path when project name is cleared', () => {
+    renderProjectManagement(container, [], '', onImport, onSetPriority);
+    const nameInput = container.querySelector<HTMLInputElement>('#import-project-name')!;
+    const repoInput = container.querySelector<HTMLInputElement>('#import-repo-path')!;
+    nameInput.value = 'my-project';
+    nameInput.dispatchEvent(new Event('input'));
+    nameInput.value = '';
+    nameInput.dispatchEvent(new Event('input'));
+    expect(repoInput.value).toBe('');
+  });
+
+  it('calls onImport with form values and createIfMissing=false when path exists', async () => {
+    // checkRepoPath falls back to {exists: true} when fetch fails in jsdom
     renderProjectManagement(container, [], '', onImport, onSetPriority);
     const nameInput = container.querySelector<HTMLInputElement>('#import-project-name')!;
     const pathInput = container.querySelector<HTMLInputElement>('#import-prd-path')!;
+    const repoInput = container.querySelector<HTMLInputElement>('#import-repo-path')!;
     nameInput.value = 'test-project';
     pathInput.value = '/tmp/prd.json';
+    repoInput.value = '/tmp/repo';
 
     container.querySelector<HTMLButtonElement>('#import-btn')!.click();
-    // Wait for promise
     await vi.waitFor(() => {
-      expect(onImportMock).toHaveBeenCalledWith('test-project', '/tmp/prd.json');
+      expect(onImportMock).toHaveBeenCalledWith('test-project', '/tmp/prd.json', '/tmp/repo', false);
     });
   });
 
@@ -89,8 +112,10 @@ describe('renderProjectManagement', () => {
     renderProjectManagement(container, [], '', onImport, onSetPriority);
     const nameInput = container.querySelector<HTMLInputElement>('#import-project-name')!;
     const pathInput = container.querySelector<HTMLInputElement>('#import-prd-path')!;
+    const repoInput = container.querySelector<HTMLInputElement>('#import-repo-path')!;
     nameInput.value = 'proj';
     pathInput.value = '/tmp/prd.json';
+    repoInput.value = '/tmp/repo';
     container.querySelector<HTMLButtonElement>('#import-btn')!.click();
 
     await vi.waitFor(() => {
@@ -103,13 +128,16 @@ describe('renderProjectManagement', () => {
     renderProjectManagement(container, [], '', onImport, onSetPriority);
     const nameInput = container.querySelector<HTMLInputElement>('#import-project-name')!;
     const pathInput = container.querySelector<HTMLInputElement>('#import-prd-path')!;
+    const repoInput = container.querySelector<HTMLInputElement>('#import-repo-path')!;
     nameInput.value = 'proj';
     pathInput.value = '/tmp/prd.json';
+    repoInput.value = '/tmp/repo';
     container.querySelector<HTMLButtonElement>('#import-btn')!.click();
 
     await vi.waitFor(() => {
       expect(nameInput.value).toBe('');
       expect(pathInput.value).toBe('');
+      expect(repoInput.value).toBe('');
     });
   });
 
@@ -118,8 +146,10 @@ describe('renderProjectManagement', () => {
     renderProjectManagement(container, [], '', onImport, onSetPriority);
     const nameInput = container.querySelector<HTMLInputElement>('#import-project-name')!;
     const pathInput = container.querySelector<HTMLInputElement>('#import-prd-path')!;
+    const repoInput = container.querySelector<HTMLInputElement>('#import-repo-path')!;
     nameInput.value = 'proj';
     pathInput.value = '/tmp/prd.json';
+    repoInput.value = '/tmp/repo';
     container.querySelector<HTMLButtonElement>('#import-btn')!.click();
 
     await vi.waitFor(() => {
@@ -129,7 +159,7 @@ describe('renderProjectManagement', () => {
   });
 
   it('calls onSetPriority when set priority button clicked', () => {
-    const projects: ProjectInfo[] = [{ name: 'beta', ticket_count: 2 }];
+    const projects: ProjectInfo[] = [{ name: 'beta', ticket_count: 2, repo_path: '/repos/beta' }];
     renderProjectManagement(container, projects, '', onImport, onSetPriority);
     const btn = container.querySelector('.set-priority-btn') as HTMLButtonElement;
     btn.click();

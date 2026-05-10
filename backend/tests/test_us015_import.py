@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
+import app.models  # noqa: F401 — registers all ORM mappers with Base.metadata
 
 
 @pytest.fixture
@@ -50,6 +51,7 @@ async def app(engine):
         mock.patch("app.main.init_db"),
         mock.patch("app.main.close_redis"),
         mock.patch("app.main.redis_listener"),
+        mock.patch("app.routers.projects.publish_event", new_callable=mock.AsyncMock),
     ):
         yield fastapi_app
 
@@ -117,7 +119,7 @@ async def test_import_creates_tickets(client, sample_prd):
     """POST /api/projects/import creates tickets from prd.json."""
     resp = await client.post(
         "/api/projects/import",
-        json={"project_name": "my-project", "prd_path": sample_prd},
+        json={"project_name": "my-project", "prd_path": sample_prd, "repo_path": "/tmp"},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -129,7 +131,7 @@ async def test_import_maps_fields_correctly(client, sample_prd):
     """Imported tickets have correct field mapping from Ralph prd.json."""
     await client.post(
         "/api/projects/import",
-        json={"project_name": "my-project", "prd_path": sample_prd},
+        json={"project_name": "my-project", "prd_path": sample_prd, "repo_path": "/tmp"},
     )
     # Fetch all tickets
     resp = await client.get("/api/tickets", params={"project": "my-project"})
@@ -149,7 +151,7 @@ async def test_import_all_tickets_start_in_to_do(client, sample_prd):
     """All imported tickets start in to_do state regardless of passes field."""
     await client.post(
         "/api/projects/import",
-        json={"project_name": "my-project", "prd_path": sample_prd},
+        json={"project_name": "my-project", "prd_path": sample_prd, "repo_path": "/tmp"},
     )
     resp = await client.get("/api/tickets", params={"project": "my-project"})
     tickets = resp.json()
@@ -162,7 +164,7 @@ async def test_import_sets_project_name(client, sample_prd):
     """Project field is set to project_name from request, not from prd.json."""
     await client.post(
         "/api/projects/import",
-        json={"project_name": "custom-name", "prd_path": sample_prd},
+        json={"project_name": "custom-name", "prd_path": sample_prd, "repo_path": "/tmp"},
     )
     resp = await client.get("/api/tickets", params={"project": "custom-name"})
     tickets = resp.json()
@@ -176,7 +178,7 @@ async def test_import_returns_count(client, sample_prd):
     """Import endpoint returns the count of imported tickets."""
     resp = await client.post(
         "/api/projects/import",
-        json={"project_name": "my-project", "prd_path": sample_prd},
+        json={"project_name": "my-project", "prd_path": sample_prd, "repo_path": "/tmp"},
     )
     assert resp.status_code == 200
     assert resp.json()["imported_count"] == 3
@@ -187,7 +189,7 @@ async def test_import_nonexistent_file(client):
     """Import with nonexistent prd_path returns 400."""
     resp = await client.post(
         "/api/projects/import",
-        json={"project_name": "my-project", "prd_path": "/nonexistent/prd.json"},
+        json={"project_name": "my-project", "prd_path": "/nonexistent/prd.json", "repo_path": "/tmp"},
     )
     assert resp.status_code == 400
     assert "not found" in resp.json()["detail"].lower() or "error" in resp.json()["detail"].lower()
@@ -206,7 +208,7 @@ async def test_import_invalid_json(client):
     try:
         resp = await client.post(
             "/api/projects/import",
-            json={"project_name": "my-project", "prd_path": path},
+            json={"project_name": "my-project", "prd_path": path, "repo_path": "/tmp"},
         )
         assert resp.status_code == 400
     finally:
@@ -226,7 +228,7 @@ async def test_import_missing_user_stories(client):
     try:
         resp = await client.post(
             "/api/projects/import",
-            json={"project_name": "my-project", "prd_path": path},
+            json={"project_name": "my-project", "prd_path": path, "repo_path": "/tmp"},
         )
         assert resp.status_code == 400
         assert "userStories" in resp.json()["detail"]
@@ -247,7 +249,7 @@ async def test_import_empty_stories(client):
     try:
         resp = await client.post(
             "/api/projects/import",
-            json={"project_name": "my-project", "prd_path": path},
+            json={"project_name": "my-project", "prd_path": path, "repo_path": "/tmp"},
         )
         assert resp.status_code == 200
         assert resp.json()["imported_count"] == 0
@@ -260,7 +262,7 @@ async def test_import_preserves_priority_ordering(client, sample_prd):
     """Imported tickets preserve priority from prd.json."""
     await client.post(
         "/api/projects/import",
-        json={"project_name": "my-project", "prd_path": sample_prd},
+        json={"project_name": "my-project", "prd_path": sample_prd, "repo_path": "/tmp"},
     )
     resp = await client.get("/api/tickets", params={"project": "my-project"})
     tickets = resp.json()

@@ -11,6 +11,7 @@ import {
 } from './project-management.js';
 import { renderSettingsPanel, saveSettings } from './settings-panel.js';
 import type { SettingsData } from './settings-panel.js';
+import { fetchPrompts, renderPromptsPanel, savePrompt } from './prompts-panel.js';
 
 // --- Types ---
 
@@ -99,6 +100,10 @@ export function renderDashboard(container: HTMLElement): void {
       </section>
       <section class="dash-section dash-section--full" id="dash-projects">
         <h2 class="dash-section-title">Project Management</h2>
+        <div class="dash-section-body"><p class="dash-loading">Loading...</p></div>
+      </section>
+      <section class="dash-section dash-section--full" id="dash-prompts">
+        <h2 class="dash-section-title">Agent Prompts</h2>
         <div class="dash-section-body"><p class="dash-loading">Loading...</p></div>
       </section>
       <section class="dash-section dash-section--full" id="dash-settings">
@@ -309,8 +314,8 @@ export async function loadDashboard(container: HTMLElement): Promise<void> {
         projectsSection,
         data.projects,
         data.active_priority_project,
-        async (name, path) => {
-          const ok = await importProject(name, path);
+        async (name, path, repoPath, createIfMissing) => {
+          const ok = await importProject(name, path, repoPath, createIfMissing);
           if (ok) await loadProjectsPanel();
           return ok;
         },
@@ -325,6 +330,19 @@ export async function loadDashboard(container: HTMLElement): Promise<void> {
     }
   }
   await loadProjectsPanel();
+
+  // Load prompts panel
+  const promptsSection = document.querySelector('#dash-prompts .dash-section-body') as HTMLElement;
+  try {
+    const prompts = await fetchPrompts();
+    if (prompts.length > 0) {
+      renderPromptsPanel(promptsSection, prompts, savePrompt);
+    } else {
+      promptsSection.innerHTML = '<p class="dash-empty">No prompts found</p>';
+    }
+  } catch {
+    promptsSection.innerHTML = '<p class="dash-empty">Failed to load prompts</p>';
+  }
 
   // Load settings panel
   const settingsSection = document.querySelector('#dash-settings .dash-section-body') as HTMLElement;

@@ -203,7 +203,7 @@ async def test_import_then_list_project(client):
         # Import
         resp = await client.post(
             "/api/projects/import",
-            json={"project_name": "new-project", "prd_path": path},
+            json={"project_name": "new-project", "prd_path": path, "repo_path": "/tmp"},
         )
         assert resp.status_code == 200
         assert resp.json()["imported_count"] == 2

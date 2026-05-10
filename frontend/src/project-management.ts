@@ -7,6 +7,7 @@ import { apiGet, apiPatch, apiPost } from './api.js';
 export interface ProjectInfo {
   name: string;
   ticket_count: number;
+  repo_path: string;
 }
 
 export interface ProjectListResponse {
@@ -14,11 +15,22 @@ export interface ProjectListResponse {
   active_priority_project: string;
 }
 
+async function checkRepoPath(path: string): Promise<{ exists: boolean; expandedPath: string }> {
+  try {
+    const resp = await apiPost<{ exists: boolean; expanded_path: string }>('/projects/check-path', { path });
+    if (resp.ok) return { exists: resp.data.exists, expandedPath: resp.data.expanded_path };
+  } catch {
+    // fall through
+  }
+  // On network error, assume exists — backend will validate
+  return { exists: true, expandedPath: path };
+}
+
 export function renderProjectManagement(
   container: HTMLElement,
   projects: ProjectInfo[],
   activePriority: string,
-  onImport: (projectName: string, prdPath: string) => Promise<boolean>,
+  onImport: (projectName: string, prdPath: string, repoPath: string, createIfMissing: boolean) => Promise<boolean>,
   onSetPriority: (projectName: string) => Promise<boolean>,
 ): void {
   const projectRows = projects
@@ -55,6 +67,10 @@ export function renderProjectManagement(
             <label class="settings-label" for="import-prd-path">prd.json Path</label>
             <input class="settings-input" id="import-prd-path" type="text" placeholder="/path/to/prd.json" />
           </div>
+          <div class="settings-field">
+            <label class="settings-label" for="import-repo-path">Git Repo Path</label>
+            <input class="settings-input" id="import-repo-path" type="text" placeholder="~/Projects/my-project" />
+          </div>
           <div class="project-import-actions">
             <button class="dash-btn dash-btn-primary" id="import-btn">Import</button>
             <span class="project-import-msg"></span>
@@ -69,42 +85,59 @@ export function renderProjectManagement(
     </div>
   `;
 
-  // Import handler
-  const importBtn = container.querySelector<HTMLButtonElement>('#import-btn')!;
-  importBtn.addEventListener('click', () => {
-    const nameInput = container.querySelector<HTMLInputElement>(
-      '#import-project-name',
-    )!;
-    const pathInput = container.querySelector<HTMLInputElement>(
-      '#import-prd-path',
-    )!;
-    const msgEl = container.querySelector<HTMLElement>(
-      '.project-import-msg',
-    )!;
+  const nameInput = container.querySelector<HTMLInputElement>('#import-project-name')!;
+  const pathInput = container.querySelector<HTMLInputElement>('#import-prd-path')!;
+  const repoInput = container.querySelector<HTMLInputElement>('#import-repo-path')!;
+  const msgEl = container.querySelector<HTMLElement>('.project-import-msg')!;
 
+  // Auto-fill repo path as ~/Projects/<project-name> when name is typed
+  nameInput.addEventListener('input', () => {
+    const name = nameInput.value.trim();
+    repoInput.value = name ? `~/Projects/${name}` : '';
+  });
+
+  const importBtn = container.querySelector<HTMLButtonElement>('#import-btn')!;
+  importBtn.addEventListener('click', async () => {
     const name = nameInput.value.trim();
     const path = pathInput.value.trim();
+    const repoPath = repoInput.value.trim();
 
-    if (!name || !path) {
-      msgEl.textContent = 'Both fields are required';
+    if (!name || !path || !repoPath) {
+      msgEl.textContent = 'All fields are required';
       msgEl.className = 'project-import-msg project-import-msg--error';
       return;
     }
 
-    msgEl.textContent = 'Importing...';
+    msgEl.textContent = 'Checking path...';
     msgEl.className = 'project-import-msg';
 
-    onImport(name, path).then((ok) => {
-      if (ok) {
-        msgEl.textContent = 'Import successful';
-        msgEl.className = 'project-import-msg project-import-msg--success';
-        nameInput.value = '';
-        pathInput.value = '';
-      } else {
-        msgEl.textContent = 'Import failed';
-        msgEl.className = 'project-import-msg project-import-msg--error';
+    const { exists, expandedPath } = await checkRepoPath(repoPath);
+    let createIfMissing = false;
+
+    if (!exists) {
+      const confirmed = window.confirm(
+        `Path "${expandedPath}" does not exist. Create it?`,
+      );
+      if (!confirmed) {
+        msgEl.textContent = '';
+        return;
       }
-    });
+      createIfMissing = true;
+    }
+
+    msgEl.textContent = 'Importing...';
+
+    const ok = await onImport(name, path, repoPath, createIfMissing);
+    if (ok) {
+      msgEl.textContent = 'Import successful';
+      msgEl.className = 'project-import-msg project-import-msg--success';
+      nameInput.value = '';
+      pathInput.value = '';
+      repoInput.value = '';
+    } else {
+      msgEl.textContent = 'Import failed';
+      msgEl.className = 'project-import-msg project-import-msg--error';
+    }
   });
 
   // Set priority handlers
@@ -120,9 +153,7 @@ export function renderProjectManagement(
 export async function fetchProjects(): Promise<ProjectListResponse> {
   try {
     const resp = await apiGet<ProjectListResponse>('/projects');
-    if (resp.ok) {
-      return resp.data;
-    }
+    if (resp.ok) return resp.data;
   } catch {
     // fall through
   }
@@ -132,11 +163,18 @@ export async function fetchProjects(): Promise<ProjectListResponse> {
 export async function importProject(
   projectName: string,
   prdPath: string,
+  repoPath: string,
+  createIfMissing: boolean,
 ): Promise<boolean> {
   try {
     const resp = await apiPost<{ imported_count: number }>(
       '/projects/import',
-      { project_name: projectName, prd_path: prdPath },
+      {
+        project_name: projectName,
+        prd_path: prdPath,
+        repo_path: repoPath,
+        create_repo_if_missing: createIfMissing,
+      },
     );
     return resp.ok;
   } catch {
@@ -144,9 +182,7 @@ export async function importProject(
   }
 }
 
-export async function setActivePriority(
-  projectName: string,
-): Promise<boolean> {
+export async function setActivePriority(projectName: string): Promise<boolean> {
   try {
     const resp = await apiPatch<unknown>('/settings', {
       settings: { active_priority_project: projectName },

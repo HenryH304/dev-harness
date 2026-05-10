@@ -44,13 +44,11 @@ class TestAgentTypeDefinitions:
         assert AGENT_TYPES["merger"].timeout == 300
 
     def test_developer_prompt_path(self) -> None:
-        """Developer prompt loaded from ralph template."""
-        assert AGENT_TYPES["developer"].prompt_path == (
-            "/home/henry/Projects/my-ralph-template/prompt.md"
-        )
+        """Developer prompt loaded from backend/prompts/developer.md."""
+        assert AGENT_TYPES["developer"].prompt_path.endswith("prompts/developer.md")
 
     def test_non_developer_prompt_paths_default(self) -> None:
-        """Reviewer, tester, merger default to backend/prompts/{type}.md."""
+        """All agents use backend/prompts/{type}.md."""
         for agent_type in ("reviewer", "tester", "merger"):
             path = AGENT_TYPES[agent_type].prompt_path
             assert path.endswith(f"prompts/{agent_type}.md"), (

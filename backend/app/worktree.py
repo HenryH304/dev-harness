@@ -1,12 +1,42 @@
 """Git worktree management service for DevHarness."""
 
+import logging
 import shutil
 import subprocess
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
+_RALPH_SETUP_SCRIPT = Path("~/Projects/my-ralph-template/setup.sh").expanduser()
+
 
 class WorktreeError(Exception):
     """Error during git worktree operations."""
+
+
+def _run_ralph_setup(worktree_path: str) -> None:
+    """Run the Ralph project setup script in the given directory.
+
+    Copies template files (ralph.sh, prompt.md, AGENTS.md) if absent and
+    registers runtime files in the git exclude list.  Non-fatal: errors are
+    logged so a missing template never blocks worktree creation.
+    """
+    if not _RALPH_SETUP_SCRIPT.exists():
+        return
+    try:
+        result = subprocess.run(
+            [str(_RALPH_SETUP_SCRIPT), worktree_path],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "Ralph setup script failed for %s: %s",
+                worktree_path,
+                result.stderr.strip(),
+            )
+    except subprocess.SubprocessError as exc:
+        logger.warning("Ralph setup script error for %s: %s", worktree_path, exc)
 
 
 def create_worktree(ticket_id: int, project_path: str) -> dict[str, str]:
@@ -67,11 +97,16 @@ def create_worktree(ticket_id: int, project_path: str) -> dict[str, str]:
                 f.write("\n")
             f.write("\n".join(lines_to_add) + "\n")
 
-    # Copy AGENTS.md from main project if it exists
+    # Copy AGENTS.md from main project if it exists (takes priority over template)
     agents_src = project / "AGENTS.md"
     if agents_src.exists():
         agents_dst = worktree_dir / "AGENTS.md"
         shutil.copy2(str(agents_src), str(agents_dst))
+
+    # Run the Ralph project setup script to copy ralph.sh and other template
+    # files, and register runtime files in the git exclude list.
+    # This is non-fatal: a missing or failing script is only logged.
+    _run_ralph_setup(worktree_path)
 
     return {
         "worktree_path": worktree_path,

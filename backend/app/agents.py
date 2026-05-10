@@ -5,8 +5,6 @@ from pathlib import Path
 
 from app.config import DEFAULT_AGENT_TIMEOUTS
 
-# Default prompt paths
-_DEVELOPER_PROMPT_PATH = "/home/henry/Projects/my-ralph-template/prompt.md"
 _PROMPTS_DIR = str(Path(__file__).parent.parent / "prompts")
 
 
@@ -23,7 +21,7 @@ AGENT_TYPES: dict[str, AgentTypeConfig] = {
     "developer": AgentTypeConfig(
         column_binding="to_do",
         timeout=DEFAULT_AGENT_TIMEOUTS["developer"],
-        prompt_path=_DEVELOPER_PROMPT_PATH,
+        prompt_path=f"{_PROMPTS_DIR}/developer.md",
     ),
     "reviewer": AgentTypeConfig(
         column_binding="ready_for_review",

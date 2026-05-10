@@ -123,17 +123,22 @@ async def transition_ticket(
     ticket.state = transition.new_state
 
     # Auto-generate note
-    note_content = (
-        f"State changed from '{previous_state}' to '{transition.new_state}'"
-    )
-    if transition.note:
-        note_content += f"\n\n{transition.note}"
+    if transition.new_state == "blocked":
+        note_content = f"Ticket blocked (was: '{previous_state}')"
+        if transition.note:
+            note_content += f"\n\nReason: {transition.note}"
+        note_type = "failure"
+    else:
+        note_content = f"State changed from '{previous_state}' to '{transition.new_state}'"
+        if transition.note:
+            note_content += f"\n\n{transition.note}"
+        note_type = "progress"
 
     note = Note(
         ticket_id=ticket_id,
         author=transition.agent_id or "system",
         content=note_content,
-        note_type="progress",
+        note_type=note_type,
     )
     session.add(note)
 
