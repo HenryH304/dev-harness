@@ -321,19 +321,84 @@ async def fail_ticket(
     # Determine agent type from agent_id (format: "{type}-{hex}")
     agent_type = agent_id.rsplit("-", 1)[0] if "-" in agent_id else agent_id
 
-    # Increment review_rejection_count if from reviewer
+    # Increment rejection counters
     if agent_type == "reviewer":
         ticket.review_rejection_count += 1
+    elif agent_type == "tester":
+        ticket.tester_rejection_count += 1
 
-    # Add failure note
-    note_content = f"Agent {agent_id} failed: {payload.reason}"
-    if payload.suggested_fixes:
-        note_content += f"\n\nSuggested fixes: {payload.suggested_fixes}"
+    # For reviewer rejections with structured feedback: append rework section
+    # to the ticket description so the developer sees it prominently next pickup
+    if agent_type == "reviewer" and payload.suggested_fixes:
+        rejection_num = ticket.review_rejection_count
+        rework_lines = [
+            f"\n\n---",
+            f"## Rework Required — Review #{rejection_num}",
+            "",
+        ]
+        if payload.rework_note:
+            rework_lines.append(payload.rework_note)
+            rework_lines.append("")
+        rework_lines.append("**Issues to address:**")
+        for line in payload.suggested_fixes.splitlines():
+            if line.strip():
+                rework_lines.append(f"- {line.strip()}")
+        rework_lines.append("")
+        rework_lines.append(
+            "_Most of the implementation is already in place. "
+            "Address the issues above and resubmit._"
+        )
+        ticket.description = ticket.description + "\n".join(rework_lines)
+
+    # For tester failures with structured feedback: append test failure section
+    if agent_type == "tester" and payload.suggested_fixes:
+        rejection_num = ticket.tester_rejection_count
+        rework_lines = [
+            f"\n\n---",
+            f"## Test Failures — Attempt #{rejection_num}",
+            "",
+        ]
+        if payload.rework_note:
+            rework_lines.append(payload.rework_note)
+            rework_lines.append("")
+        rework_lines.append("**Failures to fix:**")
+        for line in payload.suggested_fixes.splitlines():
+            if line.strip():
+                rework_lines.append(f"- {line.strip()}")
+        rework_lines.append("")
+        rework_lines.append(
+            "_Fix the failing tests and unmet criteria above, then resubmit._"
+        )
+        ticket.description = ticket.description + "\n".join(rework_lines)
+
+    # Add a summary note (visible in the ticket timeline)
+    if agent_type == "reviewer" and payload.suggested_fixes:
+        note_content = (
+            f"Review #{ticket.review_rejection_count} rejected by {agent_id}.\n\n"
+            f"**Summary:** {payload.reason}\n\n"
+        )
+        if payload.rework_note:
+            note_content += f"{payload.rework_note}\n\n"
+        note_content += f"**Issues:**\n{payload.suggested_fixes}"
+        note_type = "review_rejection"
+    elif agent_type == "tester" and payload.suggested_fixes:
+        note_content = (
+            f"Test run #{ticket.tester_rejection_count} failed by {agent_id}.\n\n"
+            f"**Summary:** {payload.reason}\n\n"
+        )
+        if payload.rework_note:
+            note_content += f"{payload.rework_note}\n\n"
+        note_content += f"**Failures:**\n{payload.suggested_fixes}"
+        note_type = "test_failure"
+    else:
+        note_content = f"Agent {agent_id} failed: {payload.reason}"
+        note_type = "failure"
+
     note = Note(
         ticket_id=ticket_id,
         author=agent_id,
         content=note_content,
-        note_type="failure",
+        note_type=note_type,
     )
     session.add(note)
 

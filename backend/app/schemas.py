@@ -46,6 +46,7 @@ class TicketResponse(BaseModel):
     tester_timeouts: int
     merger_timeouts: int
     review_rejection_count: int
+    tester_rejection_count: int
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
@@ -89,6 +90,7 @@ class TransitionRequest(BaseModel):
 class AgentFailRequest(BaseModel):
     reason: str
     suggested_fixes: str | None = None
+    rework_note: str | None = None
 
 
 class DependencyCreate(BaseModel):

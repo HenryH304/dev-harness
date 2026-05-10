@@ -10,6 +10,7 @@ Three-layer strategy:
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -96,6 +97,25 @@ async def try_pickup_and_run(agent_type: str) -> None:
     logger.info("Agent loop: %s picked up ticket %d", agent_type, ticket_id)
 
     # ── Step 2: run ralph ──────────────────────────────────────────────────
+    # Delete stale failure files before re-runs so a fixed ticket doesn't get
+    # false-rejected by leftovers from a previous iteration.
+    worktree_path = ticket_dict.get("worktree_path", "")
+    if worktree_path:
+        stale_files = {
+            "reviewer": "review-failures.json",
+            "tester": "test-failures.json",
+        }
+        stale_name = stale_files.get(agent_type)
+        if stale_name:
+            stale = Path(worktree_path) / stale_name
+            if stale.exists():
+                stale.unlink()
+                logger.info(
+                    "Agent loop: removed stale %s for ticket %d",
+                    stale_name,
+                    ticket_id,
+                )
+
     try:
         spawn_result = await spawn_agent(ticket_dict, agent_type, notes)
     except ValueError as exc:
@@ -118,19 +138,72 @@ async def try_pickup_and_run(agent_type: str) -> None:
         spawn_result.exit_code,
     )
 
+    # ── Step 2.5: check for agent feedback files ──────────────────────────
+    review_failures: dict[str, Any] | None = None
+    test_failures: dict[str, Any] | None = None
+
+    def _read_failures_file(filename: str, label: str) -> dict[str, Any] | None:
+        if not worktree_path:
+            return None
+        failures_file = Path(worktree_path) / filename
+        if not failures_file.exists():
+            return None
+        try:
+            data = json.loads(failures_file.read_text())
+            logger.info(
+                "Agent loop: %s left failures for ticket %d: %s",
+                label,
+                ticket_id,
+                data.get("summary", ""),
+            )
+            return data
+        except Exception as exc:
+            logger.warning(
+                "Could not read %s for ticket %d: %s",
+                filename,
+                ticket_id,
+                exc,
+            )
+            return None
+
+    if agent_type == "reviewer":
+        review_failures = _read_failures_file("review-failures.json", "reviewer")
+    elif agent_type == "tester":
+        test_failures = _read_failures_file("test-failures.json", "tester")
+
     # ── Step 3: report result ──────────────────────────────────────────────
     async with session_factory() as session:
         try:
-            if spawn_result.success:
+            if spawn_result.success and review_failures is None and test_failures is None:
                 await complete_ticket(ticket_id, session=session)
             else:
-                await fail_ticket(
-                    ticket_id,
-                    AgentFailRequest(
+                if review_failures:
+                    issues = review_failures.get("issues", [])
+                    suggested_fixes = "\n".join(
+                        f"[{i.get('category', 'general')}] {i.get('detail', '')}"
+                        for i in issues
+                    )
+                    fail_req = AgentFailRequest(
+                        reason=review_failures.get("summary", "Review failed"),
+                        suggested_fixes=suggested_fixes or None,
+                        rework_note=review_failures.get("rework_note"),
+                    )
+                elif test_failures:
+                    issues = test_failures.get("issues", [])
+                    suggested_fixes = "\n".join(
+                        f"[{i.get('category', 'general')}] {i.get('detail', '')}"
+                        for i in issues
+                    )
+                    fail_req = AgentFailRequest(
+                        reason=test_failures.get("summary", "Testing failed"),
+                        suggested_fixes=suggested_fixes or None,
+                        rework_note=test_failures.get("rework_note"),
+                    )
+                else:
+                    fail_req = AgentFailRequest(
                         reason=f"ralph exited with code {spawn_result.exit_code}"
-                    ),
-                    session=session,
-                )
+                    )
+                await fail_ticket(ticket_id, fail_req, session=session)
         except HTTPException as exc:
             logger.error("Result report failed for ticket %d: %s", ticket_id, exc.detail)
         except Exception as exc:

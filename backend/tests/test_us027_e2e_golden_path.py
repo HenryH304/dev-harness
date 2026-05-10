@@ -252,9 +252,9 @@ async def test_reviewer_failure_returns_to_todo_with_note(
     notes_resp = await client.get(f"/api/tickets/{ticket_id}/notes")
     assert notes_resp.status_code == 200
     notes = notes_resp.json()
-    failure_notes = [n for n in notes if n["note_type"] == "failure"]
-    assert len(failure_notes) >= 1
-    assert "Code quality issues" in failure_notes[0]["content"]
+    review_notes = [n for n in notes if n["note_type"] in ("failure", "review_rejection")]
+    assert len(review_notes) >= 1
+    assert "Code quality issues" in review_notes[0]["content"]
 
 
 @pytest.mark.asyncio

@@ -31,6 +31,7 @@ class Ticket(Base):
     tester_timeouts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     merger_timeouts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     review_rejection_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tester_rejection_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
