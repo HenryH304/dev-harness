@@ -111,3 +111,71 @@ async def spawn_agent(
         success=exit_code == 0,
         exit_code=exit_code,
     )
+
+
+async def spawn_prd_writer(
+    feature_request_id: int,
+    project: str,
+    description: str,
+    output_path: str,
+) -> SpawnResult:
+    """Run ralph in a temp directory to generate a prd.json from a feature description.
+
+    Creates a working directory at /tmp/prd-writer-{id}/, writes an input prd.json
+    with the feature description and outputPath, then spawns ralph with the
+    story-writer prompt.
+
+    Returns:
+        SpawnResult with ticket_id=feature_request_id.
+    """
+    import tempfile
+
+    story_writer_path = Path(__file__).parent.parent / "prompts" / "story-writer.md"
+    prompt = load_prompt(str(story_writer_path))
+
+    work_dir = Path(tempfile.mkdtemp(prefix=f"prd-writer-{feature_request_id}-"))
+
+    input_prd = {
+        "project": project,
+        "agentType": "prd-writer",
+        "featureDescription": description,
+        "outputPath": output_path,
+        "userStories": [
+            {
+                "id": "PW-001",
+                "title": "Generate PRD from feature description",
+                "description": description,
+                "acceptanceCriteria": [
+                    f"Write a valid prd.json to {output_path}",
+                    "All stories are completable in one Ralph iteration",
+                    "Dependencies are specified between stories that require them",
+                ],
+                "priority": 1,
+                "passes": False,
+            }
+        ],
+    }
+
+    (work_dir / "prd.json").write_text(json.dumps(input_prd, indent=2))
+    (work_dir / "prompt.md").write_text(prompt)
+    (work_dir / "progress.txt").write_text("")
+    (work_dir / "ralph.log").write_text("")
+
+    timeout_seconds = "600"
+
+    process = await asyncio.create_subprocess_exec(
+        "ralph",
+        "-timeout",
+        timeout_seconds,
+        cwd=str(work_dir),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    exit_code = await process.wait()
+
+    return SpawnResult(
+        ticket_id=feature_request_id,
+        success=exit_code == 0,
+        exit_code=exit_code,
+    )

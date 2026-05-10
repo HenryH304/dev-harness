@@ -60,9 +60,9 @@ async def test_list_prompts_returns_all_agents(client, prompt_files):
     resp = await client.get("/api/prompts")
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) == 4
     agent_types = {p["agent_type"] for p in data}
-    assert agent_types == {"developer", "reviewer", "tester", "merger"}
+    # The four kanban agents must be present; directory scanning may add extras (e.g. story-writer)
+    assert {"developer", "reviewer", "tester", "merger"}.issubset(agent_types)
 
 
 @pytest.mark.asyncio

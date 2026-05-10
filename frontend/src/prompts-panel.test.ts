@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Mock } from 'vitest';
 import { renderPromptsPanel } from './prompts-panel.js';
 import type { PromptInfo } from './prompts-panel.js';
 
@@ -12,7 +13,7 @@ const SAMPLE_PROMPTS: PromptInfo[] = [
 
 describe('renderPromptsPanel', () => {
   let container: HTMLElement;
-  let onSave: ReturnType<typeof vi.fn>;
+  let onSave: Mock<(agentType: string, content: string) => Promise<boolean>>;
 
   beforeEach(() => {
     container = document.createElement('div');

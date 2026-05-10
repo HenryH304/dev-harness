@@ -9,9 +9,11 @@ import {
   renderProjectManagement,
   setActivePriority,
 } from './project-management.js';
-import { renderSettingsPanel, saveSettings } from './settings-panel.js';
-import type { SettingsData } from './settings-panel.js';
-import { fetchPrompts, renderPromptsPanel, savePrompt } from './prompts-panel.js';
+import {
+  fetchFeatureRequests,
+  renderFeaturePanel,
+  submitFeature,
+} from './feature-panel.js';
 
 // --- Types ---
 
@@ -102,12 +104,8 @@ export function renderDashboard(container: HTMLElement): void {
         <h2 class="dash-section-title">Project Management</h2>
         <div class="dash-section-body"><p class="dash-loading">Loading...</p></div>
       </section>
-      <section class="dash-section dash-section--full" id="dash-prompts">
-        <h2 class="dash-section-title">Agent Prompts</h2>
-        <div class="dash-section-body"><p class="dash-loading">Loading...</p></div>
-      </section>
-      <section class="dash-section dash-section--full" id="dash-settings">
-        <h2 class="dash-section-title">Settings</h2>
+      <section class="dash-section dash-section--full" id="dash-features">
+        <h2 class="dash-section-title">Feature Generation</h2>
         <div class="dash-section-body"><p class="dash-loading">Loading...</p></div>
       </section>
     </div>
@@ -331,29 +329,17 @@ export async function loadDashboard(container: HTMLElement): Promise<void> {
   }
   await loadProjectsPanel();
 
-  // Load prompts panel
-  const promptsSection = document.querySelector('#dash-prompts .dash-section-body') as HTMLElement;
+  // Load feature generation panel
+  const featuresSection = document.querySelector('#dash-features .dash-section-body') as HTMLElement;
   try {
-    const prompts = await fetchPrompts();
-    if (prompts.length > 0) {
-      renderPromptsPanel(promptsSection, prompts, savePrompt);
-    } else {
-      promptsSection.innerHTML = '<p class="dash-empty">No prompts found</p>';
-    }
+    const [featureRequests, projectData] = await Promise.all([
+      fetchFeatureRequests(),
+      fetchProjects().catch(() => ({ projects: [], active_priority_project: '' })),
+    ]);
+    const projectNames = projectData.projects.map((p) => p.name);
+    renderFeaturePanel(featuresSection, featureRequests, projectNames, submitFeature);
   } catch {
-    promptsSection.innerHTML = '<p class="dash-empty">Failed to load prompts</p>';
+    featuresSection.innerHTML = '<p class="dash-empty">Failed to load feature requests</p>';
   }
 
-  // Load settings panel
-  const settingsSection = document.querySelector('#dash-settings .dash-section-body') as HTMLElement;
-  try {
-    const settingsResp = await apiGet<{ settings: SettingsData }>('/settings');
-    if (settingsResp.ok) {
-      renderSettingsPanel(settingsSection, settingsResp.data.settings, async (updated) => {
-        return saveSettings(updated);
-      });
-    }
-  } catch {
-    settingsSection.innerHTML = '<p class="dash-empty">Failed to load settings</p>';
-  }
 }

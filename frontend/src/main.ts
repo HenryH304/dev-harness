@@ -10,18 +10,24 @@ import {
   applyDependencyIcons,
 } from './dependency-icons.js';
 import { fetchProjects } from './project-management.js';
+import { fetchPrompts, renderPromptsPanel, savePrompt } from './prompts-panel.js';
+import { renderSettingsPanel, saveSettings } from './settings-panel.js';
+import type { SettingsData } from './settings-panel.js';
 import type { Ticket } from './types.js';
 import type { DepStatus } from './dependency-icons.js';
 
 const appEl = document.querySelector<HTMLDivElement>('#app')!;
 
-function renderShell(page: 'board' | 'dashboard'): void {
+type Page = 'board' | 'dashboard' | 'settings';
+
+function renderShell(page: Page): void {
   appEl.innerHTML = `
     <header class="header">
       <h1>DevHarness</h1>
       <nav class="header-nav">
         <a href="#" class="nav-link${page === 'board' ? ' nav-link--active' : ''}" data-page="board">Board</a>
         <a href="#" class="nav-link${page === 'dashboard' ? ' nav-link--active' : ''}" data-page="dashboard">Dashboard</a>
+        <a href="#" class="nav-link${page === 'settings' ? ' nav-link--active' : ''}" data-page="settings">Settings</a>
       </nav>
       <div class="connection-status">
         <span class="dot" id="ws-dot"></span>
@@ -36,7 +42,7 @@ function renderShell(page: 'board' | 'dashboard'): void {
   appEl.querySelectorAll('.nav-link').forEach((link) => {
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      const target = (link as HTMLElement).dataset.page as 'board' | 'dashboard';
+      const target = (link as HTMLElement).dataset.page as Page;
       navigateTo(target);
     });
   });
@@ -145,18 +151,59 @@ async function loadDashboardPage(): Promise<void> {
   await loadDashboard(content);
 }
 
-function navigateTo(page: 'board' | 'dashboard'): void {
-  const hash = page === 'dashboard' ? '#/dashboard' : '#/';
-  window.location.hash = hash;
+async function loadSettingsPage(): Promise<void> {
+  renderShell('settings');
+  const content = document.getElementById('page-content')!;
+  content.classList.add('settings-page');
+  content.innerHTML = `
+    <div class="settings-page-grid">
+      <section class="dash-section dash-section--full" id="settings-prompts">
+        <h2 class="dash-section-title">Agent Prompts</h2>
+        <div class="dash-section-body"><p class="dash-loading">Loading...</p></div>
+      </section>
+      <section class="dash-section dash-section--full" id="settings-app">
+        <h2 class="dash-section-title">App Settings</h2>
+        <div class="dash-section-body"><p class="dash-loading">Loading...</p></div>
+      </section>
+    </div>
+  `;
+
+  const promptsBody = content.querySelector<HTMLElement>('#settings-prompts .dash-section-body')!;
+  try {
+    const prompts = await fetchPrompts();
+    if (prompts.length > 0) {
+      renderPromptsPanel(promptsBody, prompts, savePrompt);
+    } else {
+      promptsBody.innerHTML = '<p class="dash-empty">No prompts found</p>';
+    }
+  } catch {
+    promptsBody.innerHTML = '<p class="dash-empty">Failed to load prompts</p>';
+  }
+
+  const appSettingsBody = content.querySelector<HTMLElement>('#settings-app .dash-section-body')!;
+  try {
+    const resp = await apiGet<{ settings: SettingsData }>('/settings');
+    if (resp.ok) {
+      renderSettingsPanel(appSettingsBody, resp.data.settings, async (updated) => {
+        return saveSettings(updated);
+      });
+    }
+  } catch {
+    appSettingsBody.innerHTML = '<p class="dash-empty">Failed to load settings</p>';
+  }
+}
+
+function navigateTo(page: Page): void {
+  if (page === 'dashboard') window.location.hash = '#/dashboard';
+  else if (page === 'settings') window.location.hash = '#/settings';
+  else window.location.hash = '#/';
 }
 
 function handleRoute(): void {
   const hash = window.location.hash;
-  if (hash === '#/dashboard') {
-    loadDashboardPage();
-  } else {
-    loadBoard();
-  }
+  if (hash === '#/dashboard') loadDashboardPage();
+  else if (hash === '#/settings') loadSettingsPage();
+  else loadBoard();
 }
 
 window.addEventListener('hashchange', handleRoute);

@@ -490,6 +490,16 @@ body {
   padding: var(--space-lg);
 }
 
+.settings-page {
+  padding: var(--space-lg);
+}
+
+.settings-page-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
 .dash-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -689,6 +699,11 @@ body {
   grid-column: 1 / -1;
 }
 
+.dash-section--full .dash-section-body {
+  max-height: 480px;
+  overflow-y: auto;
+}
+
 .settings-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -813,6 +828,54 @@ body {
   align-items: center;
   gap: var(--space-md);
   margin-top: var(--space-sm);
+}
+
+/* Feature generation panel */
+.feature-form {
+  margin-bottom: var(--space-lg);
+}
+
+.feature-desc-textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.feature-table td,
+.feature-table th {
+  vertical-align: top;
+}
+
+.feature-desc-cell {
+  max-width: 320px;
+  word-break: break-word;
+}
+
+.feature-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.feature-status--pending {
+  background: var(--color-surface-hover);
+  color: var(--color-text-muted);
+}
+
+.feature-status--running {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.feature-status--done {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--color-success);
+}
+
+.feature-status--failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--color-danger);
 }
 
 /* Project management */

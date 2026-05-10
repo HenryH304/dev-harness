@@ -32,9 +32,11 @@ export function renderPromptsPanel(
   onSave: (agentType: string, content: string) => Promise<boolean>,
 ): void {
   const order = ['developer', 'reviewer', 'tester', 'merger'];
-  const sorted = order
+  const known = order
     .map((t) => prompts.find((p) => p.agent_type === t))
     .filter((p): p is PromptInfo => p !== undefined);
+  const extras = prompts.filter((p) => !order.includes(p.agent_type));
+  const sorted = [...known, ...extras];
 
   container.innerHTML = `
     <div class="prompts-tabs">

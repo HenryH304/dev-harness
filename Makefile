@@ -1,4 +1,17 @@
-.PHONY: up down start stop restart logs start-ngrok stop-ngrok
+.PHONY: up down start stop restart logs start-ngrok stop-ngrok help
+
+help:
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "  up           Build and start all services + expose via ngrok"
+	@echo "  down         Stop ngrok and all services"
+	@echo "  start        Build and start Docker services"
+	@echo "  stop         Stop Docker services"
+	@echo "  restart      Stop then start Docker services"
+	@echo "  logs         Tail logs from all Docker services"
+	@echo "  start-ngrok  Start ngrok tunnel on port 8080 (prints public URL)"
+	@echo "  stop-ngrok   Stop ngrok"
+	@echo "  help         Show this help"
 
 up: start start-ngrok
 
