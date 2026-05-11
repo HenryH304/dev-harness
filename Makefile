@@ -1,3 +1,6 @@
+-include .env
+export
+
 .PHONY: up down start stop restart logs executor start-ngrok stop-ngrok help
 
 help:
@@ -14,16 +17,23 @@ help:
 	@echo "  stop-ngrok   Stop ngrok"
 	@echo "  help         Show this help"
 
-up: start start-ngrok
-
-down: stop-ngrok stop
-
-start:
-	docker-compose up -d --build
+up: start-services start-ngrok
 	@echo "Frontend: http://localhost:8080"
 	@echo "Backend:  http://localhost:9080"
 	@URL=$$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('tunnels',[]); print(t[0]['public_url'] if t else '')" 2>/dev/null); \
-	if [ -n "$$URL" ]; then echo "Public URL: $$URL"; fi
+	if [ -n "$$URL" ]; then echo "Public URL: $$URL"; else echo "Public URL: (ngrok not running — check /tmp/ngrok.log)"; fi
+	docker-compose logs -f
+
+down: stop-ngrok stop
+
+start-services:
+	docker-compose up -d --build
+
+start: start-services
+	@echo "Frontend: http://localhost:8080"
+	@echo "Backend:  http://localhost:9080"
+	@URL=$$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('tunnels',[]); print(t[0]['public_url'] if t else '')" 2>/dev/null); \
+	if [ -n "$$URL" ]; then echo "Public URL: $$URL"; else echo "Public URL: (ngrok not running — run make start-ngrok)"; fi
 	docker-compose logs -f
 
 stop:
@@ -42,7 +52,7 @@ start-ngrok:
 	@if pgrep -x ngrok > /dev/null; then \
 		echo "ngrok already running"; \
 	else \
-		nohup ngrok http 8080 --log=stdout --basic-auth="derrick-heiberg:ThisIsAverryLong and 0pfully secure passwrd that I w4 need to save" > /tmp/ngrok.log 2>&1 & \
+		nohup ngrok http 8080 --log=stdout --basic-auth="$(AUTH_USER):$(AUTH_PASSWORD)" > /tmp/ngrok.log 2>&1 & \
 		printf "Waiting for ngrok..."; \
 		for i in 1 2 3 4 5 6 7 8 9 10; do \
 			URL=$$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('tunnels',[]); print(t[0]['public_url'] if t else '')" 2>/dev/null); \
