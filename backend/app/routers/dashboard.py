@@ -47,7 +47,8 @@ class ColumnCounts(BaseModel):
     in_review: int = 0
     ready_for_test: int = 0
     in_test: int = 0
-    ready_to_merge: int = 0
+    ready_for_merge: int = 0
+    in_merge: int = 0
     done: int = 0
     blocked: int = 0
 
@@ -141,7 +142,7 @@ async def get_metrics(
     """Get workflow metrics: ticket count per column."""
     all_states = [
         "to_do", "in_progress", "ready_for_review", "in_review",
-        "ready_for_test", "in_test", "ready_to_merge", "done", "blocked",
+        "ready_for_test", "in_test", "ready_for_merge", "in_merge", "done", "blocked",
     ]
 
     result = await session.execute(
@@ -254,7 +255,8 @@ async def force_unlock_ticket(
         "to_do":            "to_do",
         "ready_for_review": "ready_for_review",
         "ready_for_test":   "ready_for_test",
-        "ready_to_merge":   "ready_to_merge",
+        "ready_for_merge":  "ready_for_merge",
+        "in_merge":         "ready_for_merge",
     }
     if ticket.state == "blocked":
         lookup_state = ticket.previous_state or "to_do"
