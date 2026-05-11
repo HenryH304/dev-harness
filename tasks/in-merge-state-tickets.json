@@ -1,0 +1,122 @@
+{
+  "userStories": [
+    {
+      "id": "US-IMS-001",
+      "title": "Migrate existing DB rows: ready_to_merge → ready_for_merge",
+      "description": "Add an idempotent SQL migration inside `_migrate_schema()` in `backend/app/database.py` that renames the state value `ready_to_merge` to `ready_for_merge` in both the `state` and `previous_state` columns of the `tickets` table. The migration must be safe to re-run (no rows will match after the first execution).",
+      "acceptanceCriteria": [
+        "In `backend/app/database.py` `_migrate_schema()`: add `UPDATE tickets SET state = 'ready_for_merge' WHERE state = 'ready_to_merge'`",
+        "Same migration for `previous_state`: `UPDATE tickets SET previous_state = 'ready_for_merge' WHERE previous_state = 'ready_to_merge'`",
+        "Both UPDATE statements are idempotent (re-running produces no changes)",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "dependencies": []
+    },
+    {
+      "id": "US-IMS-002",
+      "title": "Update backend state machine: pickup → in_merge, complete → done",
+      "description": "Update the backend state machine constants so the merger agent works through `ready_for_merge → in_merge → done` instead of the old `ready_to_merge → done` path.\n\nChanges required:\n- `backend/app/agents.py`: change `AGENT_TYPES[\"merger\"][\"column_binding\"]` from `\"ready_to_merge\"` to `\"ready_for_merge\"`\n- `backend/app/agent_loop.py`: in `STATE_TO_AGENT` dict, rename key `\"ready_to_merge\"` to `\"ready_for_merge\"` (value stays `\"merger\"`)\n- `backend/app/routers/agents.py`: change `PICKUP_NEXT_STATE[\"merger\"]` from `\"ready_to_merge\"` to `\"in_merge\"`\n- `backend/app/routers/agents.py`: remove `\"ready_to_merge\": \"done\"` from `COMPLETE_NEXT_STATE`, add `\"in_merge\": \"done\"` in its place",
+      "acceptanceCriteria": [
+        "`backend/app/agents.py`: `AGENT_TYPES[\"merger\"][\"column_binding\"]` is `\"ready_for_merge\"`",
+        "`backend/app/agent_loop.py`: `STATE_TO_AGENT` has key `\"ready_for_merge\"` mapping to `\"merger\"`; key `\"ready_to_merge\"` is removed",
+        "`backend/app/routers/agents.py`: `PICKUP_NEXT_STATE[\"merger\"]` is `\"in_merge\"`",
+        "`backend/app/routers/agents.py`: `COMPLETE_NEXT_STATE` has `\"in_merge\": \"done\"`; `\"ready_to_merge\"` key is removed",
+        "Typecheck passes",
+        "Golden path e2e test: POST pickup for merger agent → ticket state becomes `in_merge`; POST complete → ticket state becomes `done`"
+      ],
+      "priority": 1,
+      "dependencies": ["US-IMS-001"]
+    },
+    {
+      "id": "US-IMS-003",
+      "title": "Update backend allowed transitions for new states",
+      "description": "Update `ALLOWED_TRANSITIONS` in `backend/app/routers/transitions.py` to reflect the new state sequence.\n\nRequired changes:\n- `in_test` entry: replace `\"ready_to_merge\"` with `\"ready_for_merge\"` in the allowed set\n- Remove the `\"ready_to_merge\"` entry entirely\n- Add `\"ready_for_merge\": {\"in_merge\", \"blocked\"}`\n- Add `\"in_merge\": {\"done\", \"blocked\"}`",
+      "acceptanceCriteria": [
+        "`in_test` allowed transitions contain `\"ready_for_merge\"` (not `\"ready_to_merge\"`)",
+        "`\"ready_to_merge\"` key is removed from `ALLOWED_TRANSITIONS`",
+        "`\"ready_for_merge\": {\"in_merge\", \"blocked\"}` is present",
+        "`\"in_merge\": {\"done\", \"blocked\"}` is present",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "dependencies": ["US-IMS-001"]
+    },
+    {
+      "id": "US-IMS-004",
+      "title": "Update dashboard metrics model and force-unlock routing",
+      "description": "Update `backend/app/routers/dashboard.py` in two places:\n\n1. `ColumnCounts` Pydantic model: rename field `ready_to_merge` to `ready_for_merge`; add new field `in_merge: int = 0`.\n2. `all_states` list in the `get_metrics` endpoint: replace `\"ready_to_merge\"` with `\"ready_for_merge\"` and add `\"in_merge\"`.\n3. `_UNLOCK_TARGET` dict: rename `\"ready_to_merge\": \"ready_to_merge\"` to `\"ready_for_merge\": \"ready_for_merge\"`; add `\"in_merge\": \"ready_for_merge\"` so force-unlocking an in-merge ticket returns it to the queue.",
+      "acceptanceCriteria": [
+        "`ColumnCounts` has field `ready_for_merge: int = 0` (not `ready_to_merge`)",
+        "`ColumnCounts` has new field `in_merge: int = 0`",
+        "`all_states` list contains `\"ready_for_merge\"` and `\"in_merge\"` (not `\"ready_to_merge\"`)",
+        "`_UNLOCK_TARGET` maps `\"ready_for_merge\"` to `\"ready_for_merge\"` and `\"in_merge\"` to `\"ready_for_merge\"`",
+        "`GET /api/dashboard/metrics` response includes `ready_for_merge` and `in_merge` fields",
+        "Force-unlocking a ticket in state `in_merge` returns it to `ready_for_merge`",
+        "Typecheck passes",
+        "Golden path e2e test: create ticket in `in_merge`, call force-unlock, verify state is `ready_for_merge`"
+      ],
+      "priority": 2,
+      "dependencies": ["US-IMS-002", "US-IMS-003"]
+    },
+    {
+      "id": "US-IMS-005",
+      "title": "Update frontend board columns: add in_merge, rename ready_for_merge",
+      "description": "Update `frontend/src/types.ts` to replace the old `ready_to_merge` column with two new columns in the `COLUMNS` array.\n\nRemove:\n```typescript\n{ key: 'ready_to_merge', label: 'Ready to Merge' }\n```\nAdd in its place (in the same position, before `done`):\n```typescript\n{ key: 'ready_for_merge', label: 'Ready for Merge' },\n{ key: 'in_merge', label: 'In Merge' },\n```\nThe pipeline order on the board should be: `… In Test | Ready for Merge | In Merge | Done`.",
+      "acceptanceCriteria": [
+        "`COLUMNS` array contains `{ key: 'ready_for_merge', label: 'Ready for Merge' }` positioned after `in_test` and before `{ key: 'in_merge', ... }`",
+        "`COLUMNS` array contains `{ key: 'in_merge', label: 'In Merge' }` positioned after `ready_for_merge` and before `done`",
+        "`ready_to_merge` no longer appears in `COLUMNS`",
+        "Typecheck passes",
+        "Verify in browser: board shows two columns 'Ready for Merge' and 'In Merge' in the correct order"
+      ],
+      "priority": 2,
+      "dependencies": ["US-IMS-001"]
+    },
+    {
+      "id": "US-IMS-006",
+      "title": "Update frontend drag-drop allowed transitions",
+      "description": "Update `ALLOWED_TRANSITIONS` in `frontend/src/drag-drop.ts` to mirror the new backend state machine.\n\nRequired changes:\n- `in_test` entry: replace `'ready_to_merge'` with `'ready_for_merge'` in the allowed array\n- Remove the `ready_to_merge` entry entirely\n- Add `ready_for_merge: ['in_merge', 'blocked']`\n- Add `in_merge: ['done', 'blocked']`\n- In the `blocked` entry's allowed array: replace `'ready_to_merge'` with `'ready_for_merge'` and add `'in_merge'`",
+      "acceptanceCriteria": [
+        "`in_test` drag targets include `'ready_for_merge'` (not `'ready_to_merge'`)",
+        "`ready_to_merge` key is removed from drag-drop `ALLOWED_TRANSITIONS`",
+        "`ready_for_merge: ['in_merge', 'blocked']` is present",
+        "`in_merge: ['done', 'blocked']` is present",
+        "`blocked` allowed targets include `'ready_for_merge'` and `'in_merge'`",
+        "Typecheck passes",
+        "Verify in browser: dragging ticket from In Test to Ready for Merge is accepted; dragging from Ready for Merge to In Merge is accepted; dragging from In Merge to Done is accepted"
+      ],
+      "priority": 3,
+      "dependencies": ["US-IMS-005"]
+    },
+    {
+      "id": "US-IMS-007",
+      "title": "Update dashboard column labels for new states",
+      "description": "Update the column label map in `frontend/src/dashboard.ts` to reflect the renamed and new states. Find the `COLUMN_LABELS` object (or equivalent label lookup) and:\n- Remove `ready_to_merge: 'Ready to Merge'`\n- Add `ready_for_merge: 'Ready for Merge'`\n- Add `in_merge: 'In Merge'`",
+      "acceptanceCriteria": [
+        "`COLUMN_LABELS` (or equivalent) contains `ready_for_merge: 'Ready for Merge'`",
+        "`COLUMN_LABELS` contains `in_merge: 'In Merge'`",
+        "`ready_to_merge` label entry is removed",
+        "Typecheck passes",
+        "Verify in browser: dashboard column headings show 'Ready for Merge' and 'In Merge' (not 'Ready to Merge')"
+      ],
+      "priority": 3,
+      "dependencies": ["US-IMS-005"]
+    },
+    {
+      "id": "US-IMS-008",
+      "title": "Update frontend test fixtures for new state names",
+      "description": "Update test fixture data in the frontend test suite so the TypeScript compile and test suite remain green after the state rename.\n\n- `frontend/src/drag-drop.test.ts`: replace all `ready_to_merge` references with `ready_for_merge`; add test cases for `in_merge` transitions (e.g. `ready_for_merge → in_merge` is allowed, `in_merge → done` is allowed)\n- `frontend/src/dashboard.test.ts`: in any `ColumnCounts` fixtures, rename field `ready_to_merge: 0` to `ready_for_merge: 0` and add `in_merge: 0`",
+      "acceptanceCriteria": [
+        "`drag-drop.test.ts` has no `ready_to_merge` references",
+        "`drag-drop.test.ts` asserts `ready_for_merge → in_merge` transition is allowed",
+        "`drag-drop.test.ts` asserts `in_merge → done` transition is allowed",
+        "`dashboard.test.ts` fixtures use `ready_for_merge` and `in_merge` fields (not `ready_to_merge`)",
+        "`npm test` passes with no skips or warnings",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "dependencies": ["US-IMS-006", "US-IMS-007"]
+    }
+  ]
+}
