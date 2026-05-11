@@ -22,6 +22,7 @@ function makeTicket(overrides: Partial<Ticket> = {}): Ticket {
     tester_timeouts: 0,
     merger_timeouts: 0,
     review_rejection_count: 0,
+    tester_rejection_count: 0,
     created_at: '2026-01-01T00:00:00',
     updated_at: '2026-01-01T00:00:00',
     ...overrides,

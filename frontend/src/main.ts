@@ -11,6 +11,7 @@ import {
 } from './dependency-icons.js';
 import { fetchProjects } from './project-management.js';
 import { openAddStoryModal } from './add-story-modal.js';
+import { openCreateProjectModal } from './create-project-modal.js';
 import { fetchPrompts, renderPromptsPanel, savePrompt } from './prompts-panel.js';
 import { renderSettingsPanel, saveSettings } from './settings-panel.js';
 import type { SettingsData } from './settings-panel.js';
@@ -66,6 +67,7 @@ async function loadBoard(): Promise<void> {
           <option value="">All Projects</option>
         </select>
       </div>
+      <button class="dash-btn dash-btn-secondary" id="new-project-btn">+ New Project</button>
       <button class="dash-btn dash-btn-primary" id="add-story-btn">+ Add Story</button>
     </div>
   `;
@@ -106,6 +108,11 @@ async function loadBoard(): Promise<void> {
       }
       select.appendChild(opt);
     }
+
+    // Wire "New Project" button
+    document.querySelector<HTMLButtonElement>('#new-project-btn')!.addEventListener('click', () => {
+      openCreateProjectModal({ onDone: () => loadBoard() });
+    });
 
     // Wire "Add Story" button
     document.querySelector<HTMLButtonElement>('#add-story-btn')!.addEventListener('click', () => {

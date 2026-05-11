@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
-from app.models import Ticket
+from app.models import Project, Ticket
 
 
 @pytest.fixture
@@ -68,7 +68,9 @@ async def client(app):
 
 @pytest.fixture
 async def seeded_client(client, session):
-    """Client with pre-seeded tickets in multiple projects."""
+    """Client with pre-seeded projects and tickets."""
+    session.add(Project(name="project-alpha", repo_path="/tmp/project-alpha"))
+    session.add(Project(name="project-beta", repo_path="/tmp/project-beta"))
     # Seed project A with 3 tickets
     for i in range(3):
         session.add(

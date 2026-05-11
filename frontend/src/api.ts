@@ -19,7 +19,14 @@ export async function apiFetch<T>(
     ...options,
   });
 
-  const data = (await response.json()) as T;
+  let data: T;
+  const text = await response.text();
+  try {
+    data = JSON.parse(text) as T;
+  } catch {
+    // Non-JSON body (e.g. plain-text 500 from uvicorn) — surface as an error object
+    data = { detail: text || `HTTP ${response.status}` } as unknown as T;
+  }
   return { data, ok: response.ok, status: response.status };
 }
 

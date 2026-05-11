@@ -522,6 +522,7 @@ async def test_websocket_endpoint_connects(app):
 
     from app.websocket import manager
 
+    manager.active_connections.clear()
     with TestClient(app) as sync_client:
         with sync_client.websocket_connect("/ws"):
             assert len(manager.active_connections) >= 1

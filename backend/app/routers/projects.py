@@ -2,6 +2,7 @@
 
 import json
 import os
+import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -37,6 +38,18 @@ class ProjectListResponse(BaseModel):
     active_priority_project: str
 
 
+class ProjectCreateRequest(BaseModel):
+    name: str
+    repo_path: str
+    create_if_missing: bool = False
+
+
+class ProjectCreateResponse(BaseModel):
+    name: str
+    repo_path: str
+    git_initialized: bool
+
+
 class CheckPathRequest(BaseModel):
     path: str
 
@@ -54,6 +67,97 @@ async def _get_session() -> AsyncSession:  # type: ignore[misc]
         yield session
 
 
+@router.post("", response_model=ProjectCreateResponse, status_code=201)
+async def create_project(
+    req: ProjectCreateRequest,
+    session: AsyncSession = Depends(_get_session),
+) -> ProjectCreateResponse:
+    """Create a new empty project (no tickets imported)."""
+    if not req.name.strip():
+        raise HTTPException(status_code=422, detail="Project name is required")
+
+    expanded_repo = os.path.expanduser(req.repo_path)
+
+    if not os.path.isdir(expanded_repo):
+        if not req.create_if_missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Repo path does not exist: {expanded_repo}",
+            )
+        try:
+            os.makedirs(expanded_repo, exist_ok=True)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create repo path: {exc}",
+            )
+
+    existing = await session.get(Project, req.name)
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Project '{req.name}' already exists",
+        )
+
+    # Initialise a git repo with a main branch if one doesn't already exist.
+    # create_worktree requires `git worktree add ... main`, so the repo must
+    # have at least one commit on main before any ticket can be picked up.
+    git_initialized = False
+    git_dir = os.path.join(expanded_repo, ".git")
+    if not os.path.isdir(git_dir):
+        try:
+            git_env = {
+                **os.environ,
+                "GIT_AUTHOR_NAME": "DevHarness",
+                "GIT_AUTHOR_EMAIL": "devharness@local",
+                "GIT_COMMITTER_NAME": "DevHarness",
+                "GIT_COMMITTER_EMAIL": "devharness@local",
+            }
+            # Try modern git (2.28+) that supports -b; fall back for older git
+            init_result = subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=expanded_repo,
+                capture_output=True,
+                text=True,
+                env=git_env,
+            )
+            if init_result.returncode != 0:
+                subprocess.run(
+                    ["git", "init"],
+                    cwd=expanded_repo,
+                    capture_output=True,
+                    env=git_env,
+                )
+                subprocess.run(
+                    ["git", "checkout", "-b", "main"],
+                    cwd=expanded_repo,
+                    capture_output=True,
+                    env=git_env,
+                )
+
+            # Empty initial commit so main exists as a real ref for worktrees
+            subprocess.run(
+                ["git", "commit", "--allow-empty", "-m", f"chore: initialise {req.name}"],
+                cwd=expanded_repo,
+                capture_output=True,
+                env=git_env,
+            )
+            git_initialized = True
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to initialise git repository: {exc}",
+            )
+
+    try:
+        session.add(Project(name=req.name, repo_path=expanded_repo))
+        await session.commit()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}")
+
+    return ProjectCreateResponse(name=req.name, repo_path=expanded_repo, git_initialized=git_initialized)
+
+
 @router.post("/check-path", response_model=CheckPathResponse)
 async def check_path(req: CheckPathRequest) -> CheckPathResponse:
     """Check whether a filesystem path exists."""
@@ -65,17 +169,22 @@ async def check_path(req: CheckPathRequest) -> CheckPathResponse:
 async def list_projects(
     session: AsyncSession = Depends(_get_session),
 ) -> ProjectListResponse:
-    """List all projects with ticket counts and active priority project."""
+    """List all projects with ticket counts and active priority project.
+
+    Uses Project as the source of truth so projects with zero tickets appear.
+    """
+    from sqlalchemy import outerjoin
+
+    # Left-join Project → Ticket to count tickets per project (including 0)
     stmt = (
-        select(Ticket.project, func.count(Ticket.id).label("ticket_count"))
-        .group_by(Ticket.project)
-        .order_by(Ticket.project)
+        select(Project.name, Project.repo_path, func.count(Ticket.id).label("ticket_count"))
+        .select_from(outerjoin(Project, Ticket, Project.name == Ticket.project))
+        .group_by(Project.name, Project.repo_path)
+        .order_by(Project.name)
     )
     result = await session.execute(stmt)
-    project_records_result = await session.execute(select(Project))
-    repo_paths = {p.name: p.repo_path for p in project_records_result.scalars().all()}
     projects = [
-        ProjectInfo(name=row.project, ticket_count=row.ticket_count, repo_path=repo_paths.get(row.project, ""))
+        ProjectInfo(name=row.name, ticket_count=row.ticket_count, repo_path=row.repo_path)
         for row in result.all()
     ]
 

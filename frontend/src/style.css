@@ -754,6 +754,16 @@ body {
   background: var(--color-primary-hover);
 }
 
+.dash-btn-secondary {
+  background: var(--color-surface-raised, #2a2a2a);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.dash-btn-secondary:hover {
+  background: var(--color-surface-hover, #333);
+}
+
 .settings-msg {
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
@@ -1221,4 +1231,47 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+}
+
+/* Create project modal */
+.create-project-modal {
+  width: min(440px, 94vw);
+}
+
+.create-project-body {
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.create-project-hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.create-project-hint code {
+  font-family: monospace;
+  color: var(--color-text);
+}
+
+.create-project-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-xs);
+}
+
+.create-project-msg {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.create-project-msg--error {
+  color: var(--color-danger);
+}
+
+.create-project-msg--success {
+  color: var(--color-success);
 }

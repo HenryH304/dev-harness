@@ -16,6 +16,7 @@ export interface Ticket {
   tester_timeouts: number;
   merger_timeouts: number;
   review_rejection_count: number;
+  tester_rejection_count: number;
   created_at: string;
   updated_at: string;
 }

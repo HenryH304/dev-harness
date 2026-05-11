@@ -14,8 +14,10 @@ services:
       - PORT=${PORT:-9080}
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=sqlite:///data/devharness.db
+      - HOME=/home/henry
     volumes:
       - sqlite-data:/app/data
+      - /home/henry/Projects:/home/henry/Projects
     depends_on:
       - redis
 

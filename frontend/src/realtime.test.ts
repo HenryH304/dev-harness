@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setupRealtimeUpdates, applyStateChange } from './realtime.js';
-import type { StateChangeEvent } from './realtime.js';
+import type { TicketEvent } from './realtime.js';
 import type { WsClient, MessageHandler, StatusHandler, ConnectionStatus } from './ws.js';
 import type { Ticket } from './types.js';
 
@@ -24,6 +24,7 @@ function makeTicket(overrides: Partial<Ticket> = {}): Ticket {
     tester_timeouts: 0,
     merger_timeouts: 0,
     review_rejection_count: 0,
+    tester_rejection_count: 0,
     created_at: '2026-01-01T00:00:00',
     updated_at: '2026-01-01T00:00:00',
     ...overrides,
@@ -65,7 +66,7 @@ function createMockWsClient(): WsClient & {
 describe('applyStateChange', () => {
   it('updates the state of the matching ticket', () => {
     const tickets = [makeTicket({ id: 1, state: 'to_do' }), makeTicket({ id: 2, state: 'to_do' })];
-    const event: StateChangeEvent = {
+    const event: TicketEvent = {
       event_type: 'ticket_state_changed',
       ticket_id: 1,
       previous_state: 'to_do',
@@ -82,7 +83,7 @@ describe('applyStateChange', () => {
 
   it('does not mutate the original array', () => {
     const tickets = [makeTicket({ id: 1, state: 'to_do' })];
-    const event: StateChangeEvent = {
+    const event: TicketEvent = {
       event_type: 'ticket_state_changed',
       ticket_id: 1,
       previous_state: 'to_do',
@@ -98,7 +99,7 @@ describe('applyStateChange', () => {
 
   it('preserves current_agent when event agent_id is null', () => {
     const tickets = [makeTicket({ id: 1, current_agent: 'dev-123' })];
-    const event: StateChangeEvent = {
+    const event: TicketEvent = {
       event_type: 'ticket_state_changed',
       ticket_id: 1,
       previous_state: 'in_progress',
@@ -171,7 +172,7 @@ describe('setupRealtimeUpdates', () => {
     const tickets = [makeTicket({ id: 1, state: 'to_do' })];
     setupRealtimeUpdates(wsClient, boardEl, dotEl, labelEl, tickets);
 
-    const event: StateChangeEvent = {
+    const event: TicketEvent = {
       event_type: 'ticket_state_changed',
       ticket_id: 1,
       previous_state: 'to_do',
@@ -191,15 +192,31 @@ describe('setupRealtimeUpdates', () => {
     expect(card).not.toBeNull();
   });
 
-  it('ignores non-state-change events', async () => {
+  it('ignores events with no ticket_id', async () => {
     const api = await import('./api.js');
     const spy = vi.spyOn(api, 'apiGet');
 
     setupRealtimeUpdates(wsClient, boardEl, dotEl, labelEl, []);
-    wsClient._simulateMessage({ event_type: 'agent_assigned', ticket_id: 1 });
+    wsClient._simulateMessage({ event_type: 'developer_work_available' });
 
     await new Promise((r) => setTimeout(r, 10));
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('re-renders board on agent_assigned event', async () => {
+    const api = await import('./api.js');
+    const updatedTicket = makeTicket({ id: 1, state: 'in_progress', current_agent: 'developer-abc' });
+    vi.spyOn(api, 'apiGet').mockResolvedValue({ ok: true, data: [updatedTicket], status: 200 });
+
+    const tickets = [makeTicket({ id: 1, state: 'to_do' })];
+    setupRealtimeUpdates(wsClient, boardEl, dotEl, labelEl, tickets);
+
+    wsClient._simulateMessage({ event_type: 'agent_assigned', ticket_id: 1, new_state: 'in_progress', agent_id: 'developer-abc', timestamp: '2026-01-01T00:00:00' });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const inProgressCol = boardEl.querySelector('[data-column="in_progress"]');
+    const card = inProgressCol?.querySelector('[data-ticket-id="1"]');
+    expect(card).not.toBeNull();
   });
 
   it('re-renders board with fresh data from API on state change', async () => {
@@ -210,7 +227,7 @@ describe('setupRealtimeUpdates', () => {
     const tickets = [makeTicket({ id: 1, state: 'to_do' })];
     setupRealtimeUpdates(wsClient, boardEl, dotEl, labelEl, tickets);
 
-    const event: StateChangeEvent = {
+    const event: TicketEvent = {
       event_type: 'ticket_state_changed',
       ticket_id: 1,
       previous_state: 'to_do',

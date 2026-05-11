@@ -82,11 +82,13 @@ class TestBuildPrdJson:
 
 
 class TestSpawnAgent:
-    """Tests for spawning the ralph agent process."""
+    """Tests for spawning the ralph agent process via host executor."""
 
     @pytest.mark.asyncio
-    async def test_spawn_creates_prd_in_worktree(self) -> None:
-        """Verify prd.json is written to the worktree before spawning."""
+    async def test_spawn_creates_prd_in_worktree(self, tmp_path: Any) -> None:
+        """Verify prd.json and prompt.md are written to the worktree before spawning."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
         ticket: dict[str, Any] = {
             "id": 10,
             "title": "Test ticket",
@@ -94,33 +96,25 @@ class TestSpawnAgent:
             "acceptance_criteria": ["AC1"],
             "project": "proj",
             "priority": 1,
-            "worktree_path": "/tmp/test-worktree-10",
+            "worktree_path": str(worktree),
         }
 
         with (
-            mock.patch("app.ralph_runner.Path.exists", return_value=True),
-            mock.patch("app.ralph_runner.Path.mkdir"),
-            mock.patch("builtins.open", mock.mock_open()),
-            mock.patch(
-                "app.ralph_runner.asyncio.create_subprocess_exec"
-            ) as mock_exec,
+            mock.patch("app.ralph_runner._spawn_via_host", return_value=0) as mock_spawn,
             mock.patch("app.ralph_runner.load_prompt", return_value="# Test prompt"),
-            mock.patch("app.ralph_runner.get_agent_config") as mock_config,
         ):
-            mock_config.return_value = get_agent_config("developer")
-            mock_proc = mock.AsyncMock()
-            mock_proc.wait = mock.AsyncMock(return_value=0)
-            mock_proc.pid = 1234
-            mock_exec.return_value = mock_proc
-
             result = await spawn_agent(ticket, "developer", [])
 
-            # The prd.json should have been written via the open mock
-            assert result.success is True
+        assert result.success is True
+        assert (worktree / "prd.json").exists()
+        assert (worktree / "prompt.md").exists()
+        mock_spawn.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_spawn_runs_ralph_with_timeout(self) -> None:
-        """Ralph should be invoked with -timeout flag matching agent config."""
+    async def test_spawn_runs_ralph_with_timeout(self, tmp_path: Any) -> None:
+        """The developer agent timeout (1200s) should be forwarded to _spawn_via_host."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
         ticket: dict[str, Any] = {
             "id": 11,
             "title": "Test",
@@ -128,41 +122,23 @@ class TestSpawnAgent:
             "acceptance_criteria": [],
             "project": "proj",
             "priority": 1,
-            "worktree_path": "/tmp/test-worktree-11",
+            "worktree_path": str(worktree),
         }
 
         with (
-            mock.patch("app.ralph_runner.Path.exists", return_value=True),
-            mock.patch("app.ralph_runner.Path.mkdir"),
-            mock.patch("builtins.open", mock.mock_open()),
-            mock.patch(
-                "app.ralph_runner.asyncio.create_subprocess_exec"
-            ) as mock_exec,
+            mock.patch("app.ralph_runner._spawn_via_host", return_value=0) as mock_spawn,
             mock.patch("app.ralph_runner.load_prompt", return_value="# Prompt"),
-            mock.patch("app.ralph_runner.get_agent_config") as mock_config,
         ):
-            mock_config.return_value = get_agent_config("developer")
-            mock_proc = mock.AsyncMock()
-            mock_proc.wait = mock.AsyncMock(return_value=0)
-            mock_proc.pid = 5678
-            mock_exec.return_value = mock_proc
-
             await spawn_agent(ticket, "developer", [])
 
-            # Check that ralph was called with timeout
-            call_args = mock_exec.call_args
-            assert call_args is not None
-            args = call_args[0]
-            # Should contain ralph and -timeout
-            assert "ralph" in args[0] or "ralph" in str(args)
-            assert "-timeout" in args
-            # Developer timeout is 1200 seconds = 20 minutes
-            timeout_idx = list(args).index("-timeout")
-            assert args[timeout_idx + 1] == "1200"
+        _cwd, timeout = mock_spawn.call_args[0]
+        assert timeout == 1200  # developer timeout
 
     @pytest.mark.asyncio
-    async def test_spawn_success_returns_success_result(self) -> None:
-        """On ralph exit code 0, result should indicate success."""
+    async def test_spawn_success_returns_success_result(self, tmp_path: Any) -> None:
+        """On exit code 0 from host, result should indicate success."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
         ticket: dict[str, Any] = {
             "id": 12,
             "title": "Test",
@@ -170,35 +146,25 @@ class TestSpawnAgent:
             "acceptance_criteria": [],
             "project": "proj",
             "priority": 1,
-            "worktree_path": "/tmp/test-worktree-12",
+            "worktree_path": str(worktree),
         }
 
         with (
-            mock.patch("app.ralph_runner.Path.exists", return_value=True),
-            mock.patch("app.ralph_runner.Path.mkdir"),
-            mock.patch("builtins.open", mock.mock_open()),
-            mock.patch(
-                "app.ralph_runner.asyncio.create_subprocess_exec"
-            ) as mock_exec,
+            mock.patch("app.ralph_runner._spawn_via_host", return_value=0),
             mock.patch("app.ralph_runner.load_prompt", return_value="# Prompt"),
-            mock.patch("app.ralph_runner.get_agent_config") as mock_config,
         ):
-            mock_config.return_value = get_agent_config("developer")
-            mock_proc = mock.AsyncMock()
-            mock_proc.wait = mock.AsyncMock(return_value=0)
-            mock_proc.pid = 100
-            mock_exec.return_value = mock_proc
-
             result = await spawn_agent(ticket, "developer", [])
 
-            assert isinstance(result, SpawnResult)
-            assert result.success is True
-            assert result.exit_code == 0
-            assert result.ticket_id == 12
+        assert isinstance(result, SpawnResult)
+        assert result.success is True
+        assert result.exit_code == 0
+        assert result.ticket_id == 12
 
     @pytest.mark.asyncio
-    async def test_spawn_failure_returns_failure_result(self) -> None:
-        """On ralph non-zero exit, result should indicate failure."""
+    async def test_spawn_failure_returns_failure_result(self, tmp_path: Any) -> None:
+        """On non-zero exit code from host, result should indicate failure."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
         ticket: dict[str, Any] = {
             "id": 13,
             "title": "Test",
@@ -206,34 +172,24 @@ class TestSpawnAgent:
             "acceptance_criteria": [],
             "project": "proj",
             "priority": 1,
-            "worktree_path": "/tmp/test-worktree-13",
+            "worktree_path": str(worktree),
         }
 
         with (
-            mock.patch("app.ralph_runner.Path.exists", return_value=True),
-            mock.patch("app.ralph_runner.Path.mkdir"),
-            mock.patch("builtins.open", mock.mock_open()),
-            mock.patch(
-                "app.ralph_runner.asyncio.create_subprocess_exec"
-            ) as mock_exec,
+            mock.patch("app.ralph_runner._spawn_via_host", return_value=1),
             mock.patch("app.ralph_runner.load_prompt", return_value="# Prompt"),
-            mock.patch("app.ralph_runner.get_agent_config") as mock_config,
         ):
-            mock_config.return_value = get_agent_config("developer")
-            mock_proc = mock.AsyncMock()
-            mock_proc.wait = mock.AsyncMock(return_value=1)
-            mock_proc.pid = 200
-            mock_exec.return_value = mock_proc
-
             result = await spawn_agent(ticket, "developer", [])
 
-            assert result.success is False
-            assert result.exit_code == 1
-            assert result.ticket_id == 13
+        assert result.success is False
+        assert result.exit_code == 1
+        assert result.ticket_id == 13
 
     @pytest.mark.asyncio
-    async def test_spawn_uses_correct_cwd(self) -> None:
-        """Ralph should run in the ticket's worktree directory."""
+    async def test_spawn_uses_correct_cwd(self, tmp_path: Any) -> None:
+        """The worktree path should be forwarded as cwd to _spawn_via_host."""
+        worktree = tmp_path / "my-worktree"
+        worktree.mkdir()
         ticket: dict[str, Any] = {
             "id": 14,
             "title": "Test",
@@ -241,29 +197,17 @@ class TestSpawnAgent:
             "acceptance_criteria": [],
             "project": "proj",
             "priority": 1,
-            "worktree_path": "/tmp/my-worktree-14",
+            "worktree_path": str(worktree),
         }
 
         with (
-            mock.patch("app.ralph_runner.Path.exists", return_value=True),
-            mock.patch("app.ralph_runner.Path.mkdir"),
-            mock.patch("builtins.open", mock.mock_open()),
-            mock.patch(
-                "app.ralph_runner.asyncio.create_subprocess_exec"
-            ) as mock_exec,
+            mock.patch("app.ralph_runner._spawn_via_host", return_value=0) as mock_spawn,
             mock.patch("app.ralph_runner.load_prompt", return_value="# Prompt"),
-            mock.patch("app.ralph_runner.get_agent_config") as mock_config,
         ):
-            mock_config.return_value = get_agent_config("developer")
-            mock_proc = mock.AsyncMock()
-            mock_proc.wait = mock.AsyncMock(return_value=0)
-            mock_proc.pid = 300
-            mock_exec.return_value = mock_proc
-
             await spawn_agent(ticket, "developer", [])
 
-            call_kwargs = mock_exec.call_args[1]
-            assert call_kwargs["cwd"] == "/tmp/my-worktree-14"
+        cwd, _timeout = mock_spawn.call_args[0]
+        assert cwd == str(worktree)
 
     @pytest.mark.asyncio
     async def test_spawn_raises_on_missing_worktree(self) -> None:
@@ -275,12 +219,11 @@ class TestSpawnAgent:
             "acceptance_criteria": [],
             "project": "proj",
             "priority": 1,
-            "worktree_path": "/tmp/nonexistent-worktree",
+            "worktree_path": "/tmp/nonexistent-worktree-devharness",
         }
 
-        with mock.patch("app.ralph_runner.Path.exists", return_value=False):
-            with pytest.raises(ValueError, match="Worktree path does not exist"):
-                await spawn_agent(ticket, "developer", [])
+        with pytest.raises(ValueError, match="Worktree path does not exist"):
+            await spawn_agent(ticket, "developer", [])
 
     @pytest.mark.asyncio
     async def test_spawn_raises_on_missing_worktree_path(self) -> None:
@@ -299,8 +242,10 @@ class TestSpawnAgent:
             await spawn_agent(ticket, "developer", [])
 
     @pytest.mark.asyncio
-    async def test_spawn_writes_progress_and_log_files(self) -> None:
-        """progress.txt and ralph.log should be created in worktree (not committed)."""
+    async def test_spawn_writes_progress_and_log_files(self, tmp_path: Any) -> None:
+        """progress.txt and ralph.log should be created in the worktree."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
         ticket: dict[str, Any] = {
             "id": 17,
             "title": "Test",
@@ -308,40 +253,24 @@ class TestSpawnAgent:
             "acceptance_criteria": [],
             "project": "proj",
             "priority": 1,
-            "worktree_path": "/tmp/test-worktree-17",
+            "worktree_path": str(worktree),
         }
 
-        written_files: list[str] = []
-
-        def track_open(path: Any, *args: Any, **kwargs: Any) -> Any:
-            written_files.append(str(path))
-            return mock.mock_open()()
-
         with (
-            mock.patch("app.ralph_runner.Path.exists", return_value=True),
-            mock.patch("app.ralph_runner.Path.mkdir"),
-            mock.patch("builtins.open", side_effect=track_open),
-            mock.patch(
-                "app.ralph_runner.asyncio.create_subprocess_exec"
-            ) as mock_exec,
+            mock.patch("app.ralph_runner._spawn_via_host", return_value=0),
             mock.patch("app.ralph_runner.load_prompt", return_value="# Prompt"),
-            mock.patch("app.ralph_runner.get_agent_config") as mock_config,
         ):
-            mock_config.return_value = get_agent_config("developer")
-            mock_proc = mock.AsyncMock()
-            mock_proc.wait = mock.AsyncMock(return_value=0)
-            mock_proc.pid = 400
-            mock_exec.return_value = mock_proc
-
             await spawn_agent(ticket, "developer", [])
 
-            # Check that prd.json was written
-            prd_writes = [f for f in written_files if "prd.json" in f]
-            assert len(prd_writes) >= 1
+        assert (worktree / "prd.json").exists()
+        assert (worktree / "progress.txt").exists()
+        assert (worktree / "ralph.log").exists()
 
     @pytest.mark.asyncio
-    async def test_spawn_loads_correct_prompt_for_agent_type(self) -> None:
+    async def test_spawn_loads_correct_prompt_for_agent_type(self, tmp_path: Any) -> None:
         """Each agent type should use its configured prompt."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
         ticket: dict[str, Any] = {
             "id": 18,
             "title": "Test",
@@ -349,28 +278,17 @@ class TestSpawnAgent:
             "acceptance_criteria": [],
             "project": "proj",
             "priority": 1,
-            "worktree_path": "/tmp/test-worktree-18",
+            "worktree_path": str(worktree),
         }
 
+        reviewer_config = get_agent_config("reviewer")
         with (
-            mock.patch("app.ralph_runner.Path.exists", return_value=True),
-            mock.patch("app.ralph_runner.Path.mkdir"),
-            mock.patch("builtins.open", mock.mock_open()),
-            mock.patch(
-                "app.ralph_runner.asyncio.create_subprocess_exec"
-            ) as mock_exec,
+            mock.patch("app.ralph_runner._spawn_via_host", return_value=0),
             mock.patch(
                 "app.ralph_runner.load_prompt", return_value="# Reviewer prompt"
             ) as mock_load,
-            mock.patch("app.ralph_runner.get_agent_config") as mock_config,
+            mock.patch("app.ralph_runner.get_agent_config", return_value=reviewer_config),
         ):
-            reviewer_config = get_agent_config("reviewer")
-            mock_config.return_value = reviewer_config
-            mock_proc = mock.AsyncMock()
-            mock_proc.wait = mock.AsyncMock(return_value=0)
-            mock_proc.pid = 500
-            mock_exec.return_value = mock_proc
-
             await spawn_agent(ticket, "reviewer", [])
 
-            mock_load.assert_called_once_with(reviewer_config.prompt_path)
+        mock_load.assert_called_once_with(reviewer_config.prompt_path)

@@ -3,23 +3,22 @@ import type { Ticket } from './types.js';
 import { apiGet } from './api.js';
 import { renderBoard } from './board.js';
 
-export interface StateChangeEvent {
+export interface TicketEvent {
   event_type: string;
   ticket_id: number;
-  previous_state: string;
-  new_state: string;
-  agent_id: string | null;
+  previous_state?: string;
+  new_state?: string;
+  agent_id?: string | null;
   timestamp: string;
 }
 
-function isStateChangeEvent(data: unknown): data is StateChangeEvent {
+// Matches any event that references a specific ticket — covers all agent-driven
+// transitions (agent_assigned, agent_completed, agent_failed, ticket_blocked)
+// as well as manual ticket_state_changed events.
+function isTicketEvent(data: unknown): data is TicketEvent {
   if (typeof data !== 'object' || data === null) return false;
   const obj = data as Record<string, unknown>;
-  return (
-    obj['event_type'] === 'ticket_state_changed' &&
-    typeof obj['ticket_id'] === 'number' &&
-    typeof obj['new_state'] === 'string'
-  );
+  return typeof obj['ticket_id'] === 'number';
 }
 
 export function setupRealtimeUpdates(
@@ -46,7 +45,7 @@ export function setupRealtimeUpdates(
   });
 
   wsClient.onMessage(async (data: unknown) => {
-    if (!isStateChangeEvent(data)) return;
+    if (!isTicketEvent(data)) return;
 
     // Re-fetch all tickets to get the latest state
     try {
@@ -54,12 +53,15 @@ export function setupRealtimeUpdates(
       if (response.ok) {
         currentTickets = response.data;
       } else {
-        // Fallback: update locally
-        currentTickets = applyStateChange(currentTickets, data);
+        // Fallback: update locally if the event carries enough info
+        if (data.new_state) {
+          currentTickets = applyStateChange(currentTickets, data);
+        }
       }
     } catch {
-      // Fallback: update locally
-      currentTickets = applyStateChange(currentTickets, data);
+      if (data.new_state) {
+        currentTickets = applyStateChange(currentTickets, data);
+      }
     }
 
     renderBoard(boardEl, currentTickets);
@@ -73,13 +75,13 @@ export function setupRealtimeUpdates(
 
 export function applyStateChange(
   tickets: Ticket[],
-  event: StateChangeEvent
+  event: TicketEvent
 ): Ticket[] {
   return tickets.map((t) => {
     if (t.id === event.ticket_id) {
       return {
         ...t,
-        state: event.new_state,
+        state: event.new_state ?? t.state,
         current_agent: event.agent_id ?? t.current_agent,
       };
     }

@@ -1,12 +1,23 @@
-"""Ralph loop integration for spawning agent processes in worktrees."""
+"""Ralph loop integration — delegates agent execution to the host via Redis RPC.
+
+The container publishes a spawn request to `ralph:spawn`. The host-side
+executor (executor.py) picks it up, runs ralph in the specified directory,
+and publishes the result to `ralph:result:{request_id}`. The container waits
+for that response and returns a SpawnResult.
+"""
 
 import asyncio
 import json
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from app.agents import get_agent_config, load_prompt
+
+# Temp working directories for spec/story writers go here — must be on the
+# shared volume so the host executor can access them.
+_WORK_BASE = Path.home() / "Projects" / ".devharness-tmp"
 
 
 @dataclass
@@ -18,16 +29,71 @@ class SpawnResult:
     exit_code: int
 
 
+async def _spawn_via_host(cwd: str, timeout: int) -> int:
+    """Send a spawn request to the host executor via Redis and wait for result.
+
+    Returns the ralph exit code. Returns 1 on timeout or communication error.
+    """
+    from app.redis_client import get_redis
+
+    request_id = uuid.uuid4().hex
+    response_channel = f"ralph:result:{request_id}"
+
+    client = await get_redis()
+    pubsub = client.pubsub()
+    await pubsub.subscribe(response_channel)
+
+    await client.publish(
+        "ralph:spawn",
+        json.dumps(
+            {
+                "request_id": request_id,
+                "response_channel": response_channel,
+                "cwd": cwd,
+                "timeout": timeout,
+            }
+        ),
+    )
+
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout + 60  # generous buffer over ralph's own timeout
+    exit_code = 1
+    try:
+        while loop.time() < deadline:
+            message = await pubsub.get_message(
+                ignore_subscribe_messages=True, timeout=1.0
+            )
+            if message is None:
+                await asyncio.sleep(0.05)
+                continue
+            data = json.loads(message["data"])
+            exit_code = data.get("exit_code", 1)
+            break
+        else:
+            import logging
+            logging.getLogger(__name__).warning(
+                "ralph spawn timed out waiting for host response: cwd=%s", cwd
+            )
+    finally:
+        await pubsub.unsubscribe(response_channel)
+
+    return exit_code
+
+
+def _make_work_dir(prefix: str) -> Path:
+    """Create a uniquely-named working directory under the shared work base."""
+    _WORK_BASE.mkdir(parents=True, exist_ok=True)
+    work_dir = _WORK_BASE / f"{prefix}-{uuid.uuid4().hex[:8]}"
+    work_dir.mkdir()
+    return work_dir
+
+
 def build_prd_json(
     ticket: dict[str, Any],
     notes: list[dict[str, str]],
     agent_type: str,
 ) -> dict[str, Any]:
-    """Build a prd.json payload for the ralph agent.
-
-    Contains ticket context: title, description, acceptance criteria,
-    previous notes, agent type, and branch name.
-    """
+    """Build a prd.json payload for the ralph agent."""
     return {
         "project": ticket["project"],
         "branchName": f"ticket/{ticket['id']}",
@@ -51,19 +117,7 @@ async def spawn_agent(
     agent_type: str,
     notes: list[dict[str, str]],
 ) -> SpawnResult:
-    """Spawn a ralph loop process for an agent task in the ticket's worktree.
-
-    Args:
-        ticket: Ticket data dict (must include worktree_path).
-        agent_type: The type of agent (developer, reviewer, tester, merger).
-        notes: Previous notes on the ticket for context.
-
-    Returns:
-        SpawnResult indicating success/failure and exit code.
-
-    Raises:
-        ValueError: If ticket has no worktree_path or path doesn't exist.
-    """
+    """Spawn a ralph loop process for an agent task in the ticket's worktree."""
     worktree_path = ticket.get("worktree_path")
     if not worktree_path:
         raise ValueError("Ticket has no worktree_path — create a worktree first")
@@ -75,36 +129,16 @@ async def spawn_agent(
     agent_config = get_agent_config(agent_type)
     prompt = load_prompt(agent_config.prompt_path)
 
-    # Build and write prd.json in the worktree
     prd_data = build_prd_json(ticket, notes, agent_type)
-    prd_path = wt / "prd.json"
-    with open(str(prd_path), "w") as f:
-        json.dump(prd_data, f, indent=2)
-
-    # Write prompt to worktree so ralph can find it
-    prompt_path = wt / "prompt.md"
-    with open(str(prompt_path), "w") as f:
-        f.write(prompt)
-
-    # Create progress.txt and ralph.log in worktree (not committed — in .gitignore)
+    (wt / "prd.json").write_text(json.dumps(prd_data, indent=2))
+    (wt / "prompt.md").write_text(prompt)
     for filename in ("progress.txt", "ralph.log"):
-        filepath = wt / filename
-        if not Path(str(filepath)).exists():
-            with open(str(filepath), "w") as f:
-                f.write("")
+        fp = wt / filename
+        if not fp.exists():
+            fp.write_text("")
 
-    # Spawn ralph process with timeout
-    timeout_seconds = str(agent_config.timeout)
-    process = await asyncio.create_subprocess_exec(
-        "ralph",
-        "-timeout",
-        timeout_seconds,
-        cwd=worktree_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
-    exit_code = await process.wait()
+    timeout = agent_config.timeout
+    exit_code = await _spawn_via_host(worktree_path, timeout)
 
     return SpawnResult(
         ticket_id=ticket["id"],
@@ -119,21 +153,11 @@ async def spawn_prd_writer(
     description: str,
     output_path: str,
 ) -> SpawnResult:
-    """Run ralph in a temp directory to generate a prd.json from a feature description.
-
-    Creates a working directory at /tmp/prd-writer-{id}/, writes an input prd.json
-    with the feature description and outputPath, then spawns ralph with the
-    story-writer prompt.
-
-    Returns:
-        SpawnResult with ticket_id=feature_request_id.
-    """
-    import tempfile
-
+    """Run the story-writer agent to generate a prd.json from a feature description."""
     story_writer_path = Path(__file__).parent.parent / "prompts" / "story-writer.md"
     prompt = load_prompt(str(story_writer_path))
 
-    work_dir = Path(tempfile.mkdtemp(prefix=f"prd-writer-{feature_request_id}-"))
+    work_dir = _make_work_dir(f"prd-writer-{feature_request_id}")
 
     input_prd = {
         "project": project,
@@ -161,18 +185,7 @@ async def spawn_prd_writer(
     (work_dir / "progress.txt").write_text("")
     (work_dir / "ralph.log").write_text("")
 
-    timeout_seconds = "600"
-
-    process = await asyncio.create_subprocess_exec(
-        "ralph",
-        "-timeout",
-        timeout_seconds,
-        cwd=str(work_dir),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
-    exit_code = await process.wait()
+    exit_code = await _spawn_via_host(str(work_dir), 600)
 
     return SpawnResult(
         ticket_id=feature_request_id,
@@ -190,17 +203,11 @@ async def spawn_spec_writer(
     amendment_request: str | None = None,
     existing_spec: str | None = None,
 ) -> SpawnResult:
-    """Run ralph in a temp directory to generate a specification document.
-
-    The spec-writer agent reads task context from task.json, then calls the
-    dev-harness API to fetch current incomplete stories for the project.
-    """
-    import tempfile
-
+    """Run the spec-writer agent to generate a specification document."""
     spec_writer_path = Path(__file__).parent.parent / "prompts" / "spec-writer.md"
     prompt = load_prompt(str(spec_writer_path))
 
-    work_dir = Path(tempfile.mkdtemp(prefix=f"spec-writer-{spec_id}-"))
+    work_dir = _make_work_dir(f"spec-writer-{spec_id}")
 
     input_prd: dict[str, Any] = {
         "project": project,
@@ -219,16 +226,7 @@ async def spawn_spec_writer(
     (work_dir / "progress.txt").write_text("")
     (work_dir / "ralph.log").write_text("")
 
-    process = await asyncio.create_subprocess_exec(
-        "ralph",
-        "-timeout",
-        "600",
-        cwd=str(work_dir),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
-    exit_code = await process.wait()
+    exit_code = await _spawn_via_host(str(work_dir), 600)
 
     return SpawnResult(
         ticket_id=spec_id,
@@ -243,17 +241,11 @@ async def spawn_story_converter(
     spec_content: str,
     prd_output_path: str,
 ) -> SpawnResult:
-    """Run the story-writer agent to convert a spec document into prd.json stories.
-
-    Passes the spec content as featureDescription so the story-writer can break
-    it into independently-completable user stories.
-    """
-    import tempfile
-
+    """Run the story-writer agent to convert a spec document into prd.json stories."""
     story_writer_path = Path(__file__).parent.parent / "prompts" / "story-writer.md"
     prompt = load_prompt(str(story_writer_path))
 
-    work_dir = Path(tempfile.mkdtemp(prefix=f"story-converter-{spec_id}-"))
+    work_dir = _make_work_dir(f"story-converter-{spec_id}")
 
     input_prd = {
         "project": project,
@@ -281,16 +273,7 @@ async def spawn_story_converter(
     (work_dir / "progress.txt").write_text("")
     (work_dir / "ralph.log").write_text("")
 
-    process = await asyncio.create_subprocess_exec(
-        "ralph",
-        "-timeout",
-        "600",
-        cwd=str(work_dir),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
-    exit_code = await process.wait()
+    exit_code = await _spawn_via_host(str(work_dir), 600)
 
     return SpawnResult(
         ticket_id=spec_id,
