@@ -29,15 +29,15 @@ PICKUP_NEXT_STATE: dict[str, str] = {
     "developer": "in_progress",
     "reviewer": "in_review",
     "tester": "in_test",
-    "merger": "ready_to_merge",  # no "in_merge" state — stays until done
+    "merger": "in_merge",
 }
 
 # Forward state transitions on completion
 COMPLETE_NEXT_STATE: dict[str, str] = {
     "in_progress": "ready_for_review",
     "in_review": "ready_for_test",
-    "in_test": "ready_to_merge",
-    "ready_to_merge": "done",
+    "in_test": "ready_for_merge",
+    "in_merge": "done",
 }
 
 # WIP reduction priority: higher number = higher priority when near cap

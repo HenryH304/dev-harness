@@ -27,7 +27,7 @@ STATE_TO_AGENT: dict[str, str] = {
     "to_do": "developer",
     "ready_for_review": "reviewer",
     "ready_for_test": "tester",
-    "ready_to_merge": "merger",
+    "ready_for_merge": "merger",
 }
 
 _HEARTBEAT_INTERVAL = 300  # 5 minutes

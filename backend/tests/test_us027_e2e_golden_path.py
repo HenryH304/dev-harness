@@ -333,7 +333,7 @@ async def test_merger_success_moves_to_done(
     )
     await client.post(f"/api/agents/complete/{ticket_id}")
 
-    # Tester picks up and completes → ready_to_merge
+    # Tester picks up and completes → ready_for_merge
     await _assign_agent(
         session_factory, ticket_id, "tester", "tester-ok001"
     )
@@ -458,9 +458,9 @@ async def test_full_golden_path_end_to_end(
         session_factory, ticket_b_id, "tester", "tester-b01"
     )
     resp = await client.post(f"/api/agents/complete/{ticket_b_id}")
-    assert resp.json()["state"] == "ready_to_merge"
+    assert resp.json()["state"] == "ready_for_merge"
 
-    # Merger merges → DONE
+    # Merger picks up (→ in_merge) then merges → DONE
     await _assign_agent(
         session_factory, ticket_b_id, "merger", "merger-b01"
     )

@@ -34,7 +34,7 @@ AGENT_TYPES: dict[str, AgentTypeConfig] = {
         prompt_path=f"{_PROMPTS_DIR}/tester.md",
     ),
     "merger": AgentTypeConfig(
-        column_binding="ready_to_merge",
+        column_binding="ready_for_merge",
         timeout=DEFAULT_AGENT_TIMEOUTS["merger"],
         prompt_path=f"{_PROMPTS_DIR}/merger.md",
     ),

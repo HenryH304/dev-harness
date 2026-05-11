@@ -101,7 +101,7 @@ async def seed_tickets(session_factory):
                 description="Desc 5",
                 acceptance_criteria=[],
                 priority=1,
-                state="ready_to_merge",
+                state="ready_for_merge",
             ),
         ]
         session.add_all(tickets)
@@ -145,14 +145,13 @@ async def test_pickup_tester_finds_ready_for_test_ticket(client, seed_tickets):
 
 
 @pytest.mark.asyncio
-async def test_pickup_merger_finds_ready_to_merge_ticket(client, seed_tickets):
-    """Merger agent picks up a ready_to_merge ticket."""
+async def test_pickup_merger_finds_ready_for_merge_ticket(client, seed_tickets):
+    """Merger agent picks up a ready_for_merge ticket and moves it to in_merge."""
     with mock.patch("app.routers.agents.acquire_lock", return_value=True):
         resp = await client.post("/api/agents/pickup/merger")
     assert resp.status_code == 200
     data = resp.json()
-    # Merger stays in ready_to_merge (no "in_merge" state) — completion moves to done
-    assert data["state"] == "ready_to_merge"
+    assert data["state"] == "in_merge"
 
 
 @pytest.mark.asyncio
@@ -323,7 +322,7 @@ async def test_wip_priority_merger_over_developer(client, session_factory):
             description="D",
             acceptance_criteria=[],
             priority=1,
-            state="ready_to_merge",
+            state="ready_for_merge",
         )
         session.add_all([t1, t2])
 

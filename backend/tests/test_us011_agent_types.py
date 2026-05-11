@@ -34,7 +34,7 @@ class TestAgentTypeDefinitions:
         assert AGENT_TYPES["developer"].column_binding == "to_do"
         assert AGENT_TYPES["reviewer"].column_binding == "ready_for_review"
         assert AGENT_TYPES["tester"].column_binding == "ready_for_test"
-        assert AGENT_TYPES["merger"].column_binding == "ready_to_merge"
+        assert AGENT_TYPES["merger"].column_binding == "ready_for_merge"
 
     def test_default_timeouts_from_config(self) -> None:
         """Timeouts should match config defaults."""

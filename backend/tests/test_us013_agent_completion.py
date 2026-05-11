@@ -186,7 +186,7 @@ async def test_complete_reviewer_advances_to_ready_for_test(
 
 @pytest.mark.asyncio
 async def test_complete_merger_advances_to_done(client, session_factory):
-    """Merger completion advances from ready_to_merge to done."""
+    """Merger completion advances from in_merge to done."""
     async with session_factory() as session:
         ticket = Ticket(
             project="proj-a",
@@ -194,7 +194,7 @@ async def test_complete_merger_advances_to_done(client, session_factory):
             description="Desc",
             acceptance_criteria=[],
             priority=1,
-            state="ready_to_merge",
+            state="in_merge",
             current_agent="merger-aaa11111",
             assigned_at=datetime.datetime.now(datetime.timezone.utc),
             agent_attempts=1,
