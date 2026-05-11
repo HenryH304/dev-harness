@@ -20,8 +20,9 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "ready_for_review": {"in_review", "blocked"},
     "in_review": {"ready_for_test", "blocked"},
     "ready_for_test": {"in_test", "blocked"},
-    "in_test": {"ready_to_merge", "blocked"},
-    "ready_to_merge": {"done", "blocked"},
+    "in_test": {"ready_for_merge", "blocked"},
+    "ready_for_merge": {"in_merge", "blocked"},
+    "in_merge": {"done", "blocked"},
     "done": {"blocked"},
     "blocked": set(),  # blocked requires manual_override
 }

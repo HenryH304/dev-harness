@@ -75,8 +75,9 @@ VALID_TRANSITIONS = [
     ("ready_for_review", "in_review"),
     ("in_review", "ready_for_test"),
     ("ready_for_test", "in_test"),
-    ("in_test", "ready_to_merge"),
-    ("ready_to_merge", "done"),
+    ("in_test", "ready_for_merge"),
+    ("ready_for_merge", "in_merge"),
+    ("in_merge", "done"),
 ]
 
 
@@ -114,7 +115,8 @@ async def test_transition_to_blocked_from_any_state(
         "in_review",
         "ready_for_test",
         "in_test",
-        "ready_to_merge",
+        "ready_for_merge",
+        "in_merge",
     ]
     for i, state in enumerate(states_to_test):
         # Create a fresh ticket for each test
