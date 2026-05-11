@@ -650,6 +650,13 @@ async def check_agent_timeouts(
                     ticket.id,
                 )
                 next_state = COMPLETE_NEXT_STATE.get(previous_state)
+                if next_state is None:
+                    # Pickup transition may not have committed (e.g. backend crashed
+                    # after setting current_agent but before the state move to in_XYZ).
+                    # Derive the completion state from the agent type instead.
+                    pickup_state = PICKUP_NEXT_STATE.get(agent_entry.agent_type)
+                    if pickup_state:
+                        next_state = COMPLETE_NEXT_STATE.get(pickup_state)
                 if next_state:
                     ticket.state = next_state
                     ticket.current_agent = None
@@ -668,7 +675,9 @@ async def check_agent_timeouts(
                             "timestamp": now.isoformat(),
                         },
                     )
-                continue
+                    continue
+                # next_state still None — unknown state; fall through to release via
+                # the timeout path below so the agent is not left permanently stuck.
 
             # Ralph never ran or failed — increment counter and return/block.
 

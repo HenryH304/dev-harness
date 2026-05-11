@@ -561,3 +561,68 @@ async def test_timeout_increments_correct_timeout_counter(session_factory):
         assert ticket.reviewer_timeouts == 1
         assert ticket.developer_timeouts == 0  # Not incremented
         assert ticket.state == "to_do"
+
+
+@pytest.mark.asyncio
+async def test_ralph_completed_pre_pickup_state_advances_ticket(
+    tmp_path, session_factory
+):
+    """ralph_completed=True with ticket stuck in pre-pickup state (e.g. ready_for_merge)
+    advances the ticket to its correct completion state instead of looping forever."""
+    from app.routers.agents import check_agent_timeouts
+
+    ralph_log = tmp_path / "ralph.log"
+    ralph_log.write_text("some output\n<promise>COMPLETE</promise>\n")
+
+    async with session_factory() as session:
+        # Ticket in "ready_for_merge" — pickup transition never committed its
+        # state move to "in_merge", but current_agent was set and ralph finished.
+        ticket = Ticket(
+            project="proj-a",
+            title="Stuck merger",
+            description="Desc",
+            acceptance_criteria=[],
+            priority=1,
+            state="ready_for_merge",
+            current_agent="merger-stuck01",
+            worktree_path=str(tmp_path),
+            assigned_at=datetime.datetime.now(datetime.timezone.utc)
+            - datetime.timedelta(minutes=10),
+            agent_attempts=1,
+        )
+        session.add(ticket)
+        await session.flush()
+        ticket_id = ticket.id
+
+        agent = AgentRegistry(
+            agent_type="merger",
+            status="busy",
+            current_ticket_id=ticket_id,
+            started_at=datetime.datetime.now(datetime.timezone.utc)
+            - datetime.timedelta(minutes=10),
+        )
+        session.add(agent)
+        await session.commit()
+        agent_id = agent.id
+
+    mock_publish = mock.AsyncMock()
+    with mock.patch("app.routers.agents.publish_event", mock_publish):
+        await check_agent_timeouts(session_factory)
+
+    async with session_factory() as session:
+        result = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
+        ticket = result.scalar_one()
+        assert ticket.state == "done"
+        assert ticket.current_agent is None
+
+        result = await session.execute(
+            select(AgentRegistry).where(AgentRegistry.id == agent_id)
+        )
+        agent = result.scalar_one()
+        assert agent.status == "available"
+        assert agent.current_ticket_id is None
+
+    mock_publish.assert_called_once()
+    event = mock_publish.call_args[0][1]
+    assert event["event_type"] == "agent_completed"
+    assert event["new_state"] == "done"
