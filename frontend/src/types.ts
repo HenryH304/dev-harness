@@ -23,6 +23,7 @@ export interface Ticket {
 
 export const COLUMNS = [
   { key: 'to_do', label: 'To Do' },
+  { key: 'blocked', label: 'Blocked' },
   { key: 'in_progress', label: 'In Progress' },
   { key: 'ready_for_review', label: 'Ready for Review' },
   { key: 'in_review', label: 'In Review' },
@@ -30,7 +31,6 @@ export const COLUMNS = [
   { key: 'in_test', label: 'In Test' },
   { key: 'ready_to_merge', label: 'Ready to Merge' },
   { key: 'done', label: 'Done' },
-  { key: 'blocked', label: 'Blocked' },
 ] as const;
 
 export type ColumnKey = (typeof COLUMNS)[number]['key'];

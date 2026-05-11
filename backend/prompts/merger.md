@@ -96,17 +96,14 @@ If push is rejected for authentication or permission reasons — this is a genui
 
 ### 5. Clean Up
 
-After a successful push:
+After a successful push, delete the branch references only — do NOT remove the worktree directory (the system cleans that up after you exit):
 
 ```bash
-# Remove the worktree
-git worktree remove --force <worktreePath>
-
-# Delete the remote branch
-git push origin --delete <branchName>
+# Delete the remote branch (if a remote exists)
+git push origin --delete <branchName> 2>/dev/null || true
 
 # Delete the local branch (from the main repo)
-git branch -d <branchName>
+git -C <mainRepoPath> branch -d <branchName>
 ```
 
 ---
@@ -162,4 +159,4 @@ After writing the file:
 - **Always signal `<promise>COMPLETE</promise>`** — whether success or failure. Never leave the agent hanging.
 - **Resolve conflicts yourself** — reading both sides and producing the correct merged result is within your capabilities.
 - **Never force-push main** — only fast-forward merges to main are acceptable.
-- **Leave the repo clean** — no conflict markers, no broken tests, no orphaned worktrees on success.
+- **Do not remove the worktree directory** — the system deletes it automatically after you signal complete. Only delete branch references.

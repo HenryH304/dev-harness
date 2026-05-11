@@ -7,6 +7,7 @@ import {
   fetchProjects,
   importProject,
   renderProjectManagement,
+  reorderProject,
   setActivePriority,
 } from './project-management.js';
 import {
@@ -94,7 +95,7 @@ export function renderDashboard(container: HTMLElement): void {
       </section>
       <section class="dash-section" id="dash-blocked">
         <h2 class="dash-section-title">Blocked Tickets</h2>
-        <div class="dash-section-body"><p class="dash-loading">Loading...</p></div>
+        <div class="dash-section-body dash-section-body--scroll"><p class="dash-loading">Loading...</p></div>
       </section>
       <section class="dash-section" id="dash-controls">
         <h2 class="dash-section-title">Controls</h2>
@@ -321,6 +322,10 @@ export async function loadDashboard(container: HTMLElement): Promise<void> {
           const ok = await setActivePriority(name);
           if (ok) await loadProjectsPanel();
           return ok;
+        },
+        async (name, direction) => {
+          await reorderProject(name, direction);
+          await loadProjectsPanel();
         },
       );
     } catch {

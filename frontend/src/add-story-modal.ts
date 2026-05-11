@@ -1,5 +1,6 @@
 /**
- * Add Story modal — drives spec-writer and story-writer agents step by step.
+ * Add Story modal — form only. Submits a spec and hands off tracking to the board panel.
+ * openSpecReviewModal handles the review / amend / convert flow for a completed spec.
  */
 
 import { apiGet, apiPost, apiPut } from './api.js';
@@ -18,41 +19,29 @@ interface SpecGenerationOut {
   completed_at: string | null;
 }
 
-type ModalPhase =
-  | 'form'
-  | 'writing-spec'
-  | 'spec-ready'
-  | 'amending'
-  | 'converting'
-  | 'done'
-  | 'error';
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function makeOverlay(): HTMLElement {
+  document.querySelector('.add-story-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'add-story-overlay';
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+// --- Form modal (submit → close, let panel track progress) ---
 
 export function openAddStoryModal(options: {
   defaultProject: string;
   projects: string[];
-  onDone: () => void;
+  onSpecSubmitted?: () => void;
 }): void {
-  const { defaultProject, projects, onDone } = options;
-
-  // Remove any existing modal
-  document.querySelector('.add-story-overlay')?.remove();
-
-  const overlay = document.createElement('div');
-  overlay.className = 'add-story-overlay';
-  document.body.appendChild(overlay);
-
-  let currentSpec: SpecGenerationOut | null = null;
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-  function stopPolling(): void {
-    if (pollTimer !== null) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  }
+  const { defaultProject, projects, onSpecSubmitted } = options;
+  const overlay = makeOverlay();
 
   function close(): void {
-    stopPolling();
     overlay.remove();
   }
 
@@ -60,38 +49,13 @@ export function openAddStoryModal(options: {
     if (e.target === overlay) close();
   });
 
-  function render(phase: ModalPhase): void {
-    overlay.innerHTML = `
-      <div class="add-story-modal">
-        <div class="add-story-header">
-          <h2 class="add-story-title">${titleFor(phase)}</h2>
-          <button class="add-story-close" aria-label="Close">&times;</button>
-        </div>
-        <div class="add-story-body" id="add-story-body">
-          ${bodyFor(phase)}
-        </div>
+  overlay.innerHTML = `
+    <div class="add-story-modal">
+      <div class="add-story-header">
+        <h2 class="add-story-title">Add Story</h2>
+        <button class="add-story-close" aria-label="Close">&times;</button>
       </div>
-    `;
-
-    overlay.querySelector('.add-story-close')!.addEventListener('click', close);
-    wirePhase(phase);
-  }
-
-  function titleFor(phase: ModalPhase): string {
-    switch (phase) {
-      case 'form': return 'Add Story';
-      case 'writing-spec': return 'Generating Specification';
-      case 'spec-ready': return 'Review Specification';
-      case 'amending': return 'Updating Specification';
-      case 'converting': return 'Converting to Tasks';
-      case 'done': return 'Tasks Created';
-      case 'error': return 'Something Went Wrong';
-    }
-  }
-
-  function bodyFor(phase: ModalPhase): string {
-    switch (phase) {
-      case 'form': return `
+      <div class="add-story-body">
         <div class="add-story-form">
           <label class="add-story-label" for="as-project">Project</label>
           <input class="add-story-input" id="as-project" type="text" list="as-project-list"
@@ -112,117 +76,14 @@ export function openAddStoryModal(options: {
             <button class="dash-btn" id="as-cancel">Cancel</button>
           </div>
         </div>
-      `;
+      </div>
+    </div>
+  `;
 
-      case 'writing-spec':
-      case 'amending':
-      case 'converting': {
-        const messages: Record<string, string> = {
-          'writing-spec': 'Running spec-writer agent — this may take a minute…',
-          'amending': 'Applying amendment — please wait…',
-          'converting': 'Running story-writer agent — converting spec to tasks…',
-        };
-        return `
-          <div class="add-story-spinner-wrap">
-            <div class="add-story-spinner"></div>
-            <p class="add-story-spinner-msg">${messages[phase]}</p>
-          </div>
-        `;
-      }
+  overlay.querySelector('.add-story-close')!.addEventListener('click', close);
+  overlay.querySelector('#as-cancel')!.addEventListener('click', close);
 
-      case 'spec-ready': {
-        const content = escHtml(currentSpec?.spec_content ?? '');
-        return `
-          <div class="add-story-spec-wrap">
-            <pre class="add-story-spec-pre">${content}</pre>
-
-            <details class="add-story-amend-details">
-              <summary class="add-story-amend-summary">Request Amendment</summary>
-              <div class="add-story-amend-body">
-                <textarea class="add-story-textarea" id="as-amendment"
-                  placeholder="Describe what you'd like changed…" rows="4"></textarea>
-                <button class="dash-btn dash-btn-secondary" id="as-amend-btn">Apply Amendment</button>
-              </div>
-            </details>
-
-            <p class="add-story-msg" id="as-msg"></p>
-
-            <div class="add-story-actions">
-              <button class="dash-btn dash-btn-primary" id="as-convert-btn">Convert to Tasks</button>
-              <button class="dash-btn" id="as-cancel-spec">Cancel</button>
-            </div>
-          </div>
-        `;
-      }
-
-      case 'done':
-        return `
-          <div class="add-story-done">
-            <p class="add-story-done-msg">
-              ✓ ${currentSpec?.imported_count ?? 0} task${(currentSpec?.imported_count ?? 0) !== 1 ? 's' : ''} created successfully.
-            </p>
-            <div class="add-story-actions">
-              <button class="dash-btn dash-btn-primary" id="as-done-btn">Close</button>
-            </div>
-          </div>
-        `;
-
-      case 'error': {
-        const stepLabel = stepLabelFor(currentSpec?.step ?? null);
-        const errText = escHtml(currentSpec?.error ?? 'Unknown error');
-        return `
-          <div class="add-story-error">
-            <p class="add-story-error-step">Failed at: <strong>${stepLabel}</strong></p>
-            <pre class="add-story-error-detail">${errText}</pre>
-            <div class="add-story-actions">
-              <button class="dash-btn" id="as-error-close">Close</button>
-            </div>
-          </div>
-        `;
-      }
-    }
-  }
-
-  function stepLabelFor(step: string | null): string {
-    switch (step) {
-      case 'spec_writing': return 'Generating specification';
-      case 'amending': return 'Applying amendment';
-      case 'converting': return 'Converting to tasks';
-      case 'importing': return 'Importing tasks';
-      default: return step ?? 'Unknown step';
-    }
-  }
-
-  function wirePhase(phase: ModalPhase): void {
-    switch (phase) {
-      case 'form':
-        overlay.querySelector('#as-submit')!.addEventListener('click', handleSubmit);
-        overlay.querySelector('#as-cancel')!.addEventListener('click', close);
-        break;
-
-      case 'spec-ready':
-        overlay.querySelector('#as-convert-btn')!.addEventListener('click', handleConvert);
-        overlay.querySelector('#as-cancel-spec')!.addEventListener('click', close);
-        overlay.querySelector('#as-amend-btn')?.addEventListener('click', handleAmend);
-        break;
-
-      case 'done':
-        overlay.querySelector('#as-done-btn')!.addEventListener('click', () => {
-          close();
-          onDone();
-        });
-        break;
-
-      case 'error':
-        overlay.querySelector('#as-error-close')!.addEventListener('click', close);
-        break;
-
-      default:
-        break;
-    }
-  }
-
-  async function handleSubmit(): Promise<void> {
+  overlay.querySelector('#as-submit')!.addEventListener('click', async () => {
     const project = (overlay.querySelector<HTMLInputElement>('#as-project')!).value.trim();
     const desc = (overlay.querySelector<HTMLTextAreaElement>('#as-desc')!).value.trim();
     const msg = overlay.querySelector<HTMLElement>('#as-msg')!;
@@ -238,80 +99,154 @@ export function openAddStoryModal(options: {
       return;
     }
 
-    render('writing-spec');
+    const submitBtn = overlay.querySelector<HTMLButtonElement>('#as-submit')!;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting…';
 
     const resp = await apiPost<SpecGenerationOut>('/specs', { project, description: desc });
     if (!resp.ok) {
-      currentSpec = null;
-      render('error');
-      return;
-    }
-    currentSpec = resp.data;
-    startPolling();
-  }
-
-  async function handleAmend(): Promise<void> {
-    const amendment = (overlay.querySelector<HTMLTextAreaElement>('#as-amendment')!).value.trim();
-    const msg = overlay.querySelector<HTMLElement>('#as-msg')!;
-    if (!amendment) {
-      msg.textContent = 'Please describe the amendment.';
+      msg.textContent = 'Failed to start spec generation. Please try again.';
       msg.className = 'add-story-msg add-story-msg--error';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Generate Specification';
       return;
     }
-    if (!currentSpec) return;
 
-    render('amending');
-    const resp = await apiPut<SpecGenerationOut>(`/specs/${currentSpec.id}/amend`, { amendment });
-    if (!resp.ok) {
-      render('error');
-      return;
-    }
-    currentSpec = resp.data;
-    startPolling();
+    close();
+    onSpecSubmitted?.();
+  });
+}
+
+// --- Review modal (opened from the board panel when spec is ready) ---
+
+export function openSpecReviewModal(options: {
+  specId: number;
+  projects: string[];
+  onClose?: () => void;
+}): void {
+  const { specId, onClose } = options;
+  const overlay = makeOverlay();
+
+  function close(): void {
+    overlay.remove();
+    onClose?.();
   }
 
-  async function handleConvert(): Promise<void> {
-    if (!currentSpec) return;
-    render('converting');
-    const resp = await apiPost<SpecGenerationOut>(`/specs/${currentSpec.id}/convert`, {});
-    if (!resp.ok) {
-      render('error');
-      return;
-    }
-    currentSpec = resp.data;
-    startPolling();
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+
+  function renderShell(title: string, body: string): void {
+    overlay.innerHTML = `
+      <div class="add-story-modal">
+        <div class="add-story-header">
+          <h2 class="add-story-title">${title}</h2>
+          <button class="add-story-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="add-story-body" id="review-body">
+          ${body}
+        </div>
+      </div>
+    `;
+    overlay.querySelector('.add-story-close')!.addEventListener('click', close);
   }
 
-  function startPolling(): void {
-    stopPolling();
-    pollTimer = setInterval(async () => {
-      if (!currentSpec) { stopPolling(); return; }
-      const resp = await apiGet<SpecGenerationOut>(`/specs/${currentSpec.id}`);
-      if (!resp.ok) return;
-      currentSpec = resp.data;
+  function showLoading(): void {
+    renderShell('Review Specification', `
+      <div class="add-story-spinner-wrap">
+        <div class="add-story-spinner"></div>
+        <p class="add-story-spinner-msg">Loading specification…</p>
+      </div>
+    `);
+  }
 
-      if (currentSpec.status === 'failed') {
-        stopPolling();
-        render('error');
+  function showError(message: string): void {
+    renderShell('Something Went Wrong', `
+      <div class="add-story-error">
+        <pre class="add-story-error-detail">${escHtml(message)}</pre>
+        <div class="add-story-actions">
+          <button class="dash-btn" id="rv-close">Close</button>
+        </div>
+      </div>
+    `);
+    overlay.querySelector('#rv-close')!.addEventListener('click', close);
+  }
+
+  function showSpec(spec: SpecGenerationOut): void {
+    const content = escHtml(spec.spec_content ?? '');
+    renderShell('Review Specification', `
+      <div class="add-story-spec-wrap">
+        <pre class="add-story-spec-pre">${content}</pre>
+
+        <details class="add-story-amend-details">
+          <summary class="add-story-amend-summary">Request Amendment</summary>
+          <div class="add-story-amend-body">
+            <textarea class="add-story-textarea" id="rv-amendment"
+              placeholder="Describe what you'd like changed…" rows="4"></textarea>
+            <button class="dash-btn dash-btn-secondary" id="rv-amend-btn">Apply Amendment</button>
+          </div>
+        </details>
+
+        <p class="add-story-msg" id="rv-msg"></p>
+
+        <div class="add-story-actions">
+          <button class="dash-btn dash-btn-primary" id="rv-convert-btn">Convert to Tasks</button>
+          <button class="dash-btn" id="rv-cancel">Cancel</button>
+        </div>
+      </div>
+    `);
+
+    overlay.querySelector('#rv-cancel')!.addEventListener('click', close);
+
+    overlay.querySelector('#rv-amend-btn')!.addEventListener('click', async () => {
+      const amendment = (overlay.querySelector<HTMLTextAreaElement>('#rv-amendment')!).value.trim();
+      const msg = overlay.querySelector<HTMLElement>('#rv-msg')!;
+      if (!amendment) {
+        msg.textContent = 'Please describe the amendment.';
+        msg.className = 'add-story-msg add-story-msg--error';
         return;
       }
 
-      if (currentSpec.status === 'done') {
-        stopPolling();
-        // Determine what phase completed
-        const step = currentSpec.step;
-        if (step === 'importing' || currentSpec.imported_count !== null) {
-          render('done');
-        } else {
-          render('spec-ready');
-        }
+      const btn = overlay.querySelector<HTMLButtonElement>('#rv-amend-btn')!;
+      btn.disabled = true;
+      btn.textContent = 'Submitting…';
+
+      const resp = await apiPut<SpecGenerationOut>(`/specs/${specId}/amend`, { amendment });
+      if (!resp.ok) {
+        msg.textContent = 'Failed to submit amendment. Please try again.';
+        msg.className = 'add-story-msg add-story-msg--error';
+        btn.disabled = false;
+        btn.textContent = 'Apply Amendment';
+        return;
       }
-    }, 3000);
+      close();
+    });
+
+    overlay.querySelector('#rv-convert-btn')!.addEventListener('click', async () => {
+      const btn = overlay.querySelector<HTMLButtonElement>('#rv-convert-btn')!;
+      btn.disabled = true;
+      btn.textContent = 'Submitting…';
+
+      const resp = await apiPost<SpecGenerationOut>(`/specs/${specId}/convert`, {});
+      if (!resp.ok) {
+        const msg = overlay.querySelector<HTMLElement>('#rv-msg')!;
+        msg.textContent = 'Failed to start conversion. Please try again.';
+        msg.className = 'add-story-msg add-story-msg--error';
+        btn.disabled = false;
+        btn.textContent = 'Convert to Tasks';
+        return;
+      }
+      close();
+    });
   }
 
-  function escHtml(s: string): string {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
+  showLoading();
 
-  render('form');
+  apiGet<SpecGenerationOut>(`/specs/${specId}`).then(resp => {
+    if (!resp.ok || !resp.data.spec_content) {
+      showError('Could not load specification content.');
+      return;
+    }
+    showSpec(resp.data);
+  }).catch(() => showError('Network error loading specification.'));
 }

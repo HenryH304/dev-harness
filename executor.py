@@ -36,18 +36,31 @@ async def handle_request(client: aioredis.Redis, request: dict) -> None:
     timeout = int(request.get("timeout", 600))
     response_channel = request.get("response_channel", f"ralph:result:{request_id}")
 
-    log.info("spawn request_id=%s cwd=%s timeout=%ds", request_id, cwd, timeout)
+    timeout_minutes = max(1, timeout // 60)
+    log.info("spawn request_id=%s cwd=%s timeout=%dm", request_id, cwd, timeout_minutes)
 
     exit_code = 1
     try:
-        result = subprocess.run(
-            ["ralph", "-timeout", str(timeout)],
+        proc = subprocess.Popen(
+            ["ralph", "-timeout", f"{timeout_minutes}m"],
             cwd=cwd,
-            timeout=timeout + 30,
         )
-        exit_code = result.returncode
-    except subprocess.TimeoutExpired:
-        log.warning("ralph timed out: request_id=%s", request_id)
+        log.info("ralph started pid=%d request_id=%s", proc.pid, request_id)
+
+        await client.publish(
+            response_channel,
+            json.dumps({"type": "ack", "request_id": request_id, "pid": proc.pid}),
+        )
+
+        try:
+            exit_code = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, proc.wait),
+                timeout=timeout + 30,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            log.warning("ralph timed out and was killed: request_id=%s pid=%d", request_id, proc.pid)
+
     except FileNotFoundError:
         log.error("ralph not found — is it on PATH?")
     except Exception as exc:
@@ -57,13 +70,7 @@ async def handle_request(client: aioredis.Redis, request: dict) -> None:
 
     await client.publish(
         response_channel,
-        json.dumps(
-            {
-                "request_id": request_id,
-                "exit_code": exit_code,
-                "success": exit_code == 0,
-            }
-        ),
+        json.dumps({"type": "result", "request_id": request_id, "exit_code": exit_code, "success": exit_code == 0}),
     )
 
 

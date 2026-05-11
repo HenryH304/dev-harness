@@ -5,6 +5,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent_loop import agent_event_listener, heartbeat_loop, startup_scan
+from app.routers.specs import spec_startup_scan
 from app.config import AppConfig, load_config
 from app.database import get_engine, init_db
 from app.notifications import notification_listener
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     event_loop_task = asyncio.create_task(agent_event_listener())
     heartbeat_task = asyncio.create_task(heartbeat_loop())
     asyncio.create_task(startup_scan())
+    asyncio.create_task(spec_startup_scan())
     yield
     listener_task.cancel()
     notif_task.cancel()

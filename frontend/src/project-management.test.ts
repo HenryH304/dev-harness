@@ -26,8 +26,8 @@ describe('renderProjectManagement', () => {
 
   it('renders project list with ticket counts', () => {
     const projects: ProjectInfo[] = [
-      { name: 'alpha', ticket_count: 3, repo_path: '/repos/alpha' },
-      { name: 'beta', ticket_count: 1, repo_path: '/repos/beta' },
+      { name: 'alpha', ticket_count: 3, repo_path: '/repos/alpha', sort_order: 1 },
+      { name: 'beta', ticket_count: 1, repo_path: '/repos/beta', sort_order: 2 },
     ];
     renderProjectManagement(container, projects, '', onImport, onSetPriority);
     const items = container.querySelectorAll('.project-item');
@@ -39,8 +39,8 @@ describe('renderProjectManagement', () => {
 
   it('highlights active priority project', () => {
     const projects: ProjectInfo[] = [
-      { name: 'alpha', ticket_count: 3, repo_path: '/repos/alpha' },
-      { name: 'beta', ticket_count: 1, repo_path: '/repos/beta' },
+      { name: 'alpha', ticket_count: 3, repo_path: '/repos/alpha', sort_order: 1 },
+      { name: 'beta', ticket_count: 1, repo_path: '/repos/beta', sort_order: 2 },
     ];
     renderProjectManagement(container, projects, 'alpha', onImport, onSetPriority);
     const items = container.querySelectorAll('.project-item');
@@ -49,7 +49,7 @@ describe('renderProjectManagement', () => {
   });
 
   it('disables set priority button for active project', () => {
-    const projects: ProjectInfo[] = [{ name: 'alpha', ticket_count: 3, repo_path: '/repos/alpha' }];
+    const projects: ProjectInfo[] = [{ name: 'alpha', ticket_count: 3, repo_path: '/repos/alpha', sort_order: 1 }];
     renderProjectManagement(container, projects, 'alpha', onImport, onSetPriority);
     const btn = container.querySelector('.set-priority-btn') as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
@@ -159,7 +159,7 @@ describe('renderProjectManagement', () => {
   });
 
   it('calls onSetPriority when set priority button clicked', () => {
-    const projects: ProjectInfo[] = [{ name: 'beta', ticket_count: 2, repo_path: '/repos/beta' }];
+    const projects: ProjectInfo[] = [{ name: 'beta', ticket_count: 2, repo_path: '/repos/beta', sort_order: 2 }];
     renderProjectManagement(container, projects, '', onImport, onSetPriority);
     const btn = container.querySelector('.set-priority-btn') as HTMLButtonElement;
     btn.click();

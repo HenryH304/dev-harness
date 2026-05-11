@@ -8,6 +8,7 @@ export interface ProjectInfo {
   name: string;
   ticket_count: number;
   repo_path: string;
+  sort_order: number;
 }
 
 export interface ProjectListResponse {
@@ -32,18 +33,24 @@ export function renderProjectManagement(
   activePriority: string,
   onImport: (projectName: string, prdPath: string, repoPath: string, createIfMissing: boolean) => Promise<boolean>,
   onSetPriority: (projectName: string) => Promise<boolean>,
+  onReorder?: (projectName: string, direction: 'up' | 'down') => Promise<void>,
 ): void {
   const projectRows = projects
     .map(
-      (p) => `
+      (p, idx) => `
     <div class="project-item${p.name === activePriority ? ' project-item--active' : ''}" data-project="${p.name}">
+      <div class="project-order-controls">
+        <button class="project-order-btn order-up-btn" data-project="${p.name}" ${idx === 0 ? 'disabled' : ''} title="Move up (higher priority)">▲</button>
+        <span class="project-order-rank">${idx + 1}</span>
+        <button class="project-order-btn order-down-btn" data-project="${p.name}" ${idx === projects.length - 1 ? 'disabled' : ''} title="Move down (lower priority)">▼</button>
+      </div>
       <div class="project-info">
         <span class="project-name">${p.name}</span>
         <span class="project-count">${p.ticket_count} ticket${p.ticket_count !== 1 ? 's' : ''}</span>
       </div>
       <button class="dash-btn ${p.name === activePriority ? 'dash-btn-success' : 'dash-btn-primary'} set-priority-btn"
         ${p.name === activePriority ? 'disabled' : ''}>
-        ${p.name === activePriority ? 'Active' : 'Set Priority'}
+        ${p.name === activePriority ? '★ Active' : 'Set Priority'}
       </button>
     </div>`,
     )
@@ -148,6 +155,20 @@ export function renderProjectManagement(
       onSetPriority(projectName);
     });
   });
+
+  // Up/down reorder handlers
+  if (onReorder) {
+    container.querySelectorAll<HTMLButtonElement>('.order-up-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        onReorder(btn.dataset.project ?? '', 'up');
+      });
+    });
+    container.querySelectorAll<HTMLButtonElement>('.order-down-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        onReorder(btn.dataset.project ?? '', 'down');
+      });
+    });
+  }
 }
 
 export async function fetchProjects(): Promise<ProjectListResponse> {
@@ -176,6 +197,15 @@ export async function importProject(
         create_repo_if_missing: createIfMissing,
       },
     );
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function reorderProject(projectName: string, direction: 'up' | 'down'): Promise<boolean> {
+  try {
+    const resp = await apiPatch<unknown>(`/projects/${encodeURIComponent(projectName)}/order`, { direction });
     return resp.ok;
   } catch {
     return false;

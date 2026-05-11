@@ -29,15 +29,27 @@ async def _migrate_schema(conn: Any) -> None:
     """Add missing columns to existing tables (idempotent)."""
     from sqlalchemy import text
 
-    # tester_rejection_count added alongside review_rejection_count equivalent for tester
     columns = await conn.execute(text("PRAGMA table_info(tickets)"))
     existing = {row[1] for row in columns}
-    if "tester_rejection_count" not in existing:
-        await conn.execute(
-            text(
-                "ALTER TABLE tickets ADD COLUMN tester_rejection_count INTEGER NOT NULL DEFAULT 0"
+    ticket_migrations = [
+        ("tester_rejection_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("developer_failure_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("previous_state", "VARCHAR(50)"),
+    ]
+    for col, definition in ticket_migrations:
+        if col not in existing:
+            await conn.execute(
+                text(f"ALTER TABLE tickets ADD COLUMN {col} {definition}")
             )
-        )
+
+    proj_columns = await conn.execute(text("PRAGMA table_info(projects)"))
+    existing_proj = {row[1] for row in proj_columns}
+    if "sort_order" not in existing_proj:
+        await conn.execute(text("ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
+        # Back-fill existing projects with sequential order based on name
+        await conn.execute(text(
+            "UPDATE projects SET sort_order = (SELECT COUNT(*) FROM projects p2 WHERE p2.name <= projects.name)"
+        ))
 
 
 async def get_session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:

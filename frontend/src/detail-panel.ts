@@ -17,6 +17,7 @@ export interface TicketDetail {
   acceptance_criteria: unknown[];
   priority: number;
   state: string;
+  previous_state: string | null;
   branch_name: string | null;
   worktree_path: string | null;
   current_agent: string | null;
@@ -144,11 +145,13 @@ export function renderDetailPanel(
   const meta = document.createElement('div');
   meta.className = 'detail-meta';
   meta.innerHTML = `
-    <div class="detail-meta-row"><strong>State:</strong> ${ticket.state}</div>
+    <div class="detail-meta-row"><strong>State:</strong> ${ticket.state}${ticket.previous_state ? ` <span class="detail-prev-state">(was: ${ticket.previous_state})</span>` : ''}</div>
     <div class="detail-meta-row"><strong>Priority:</strong> P${ticket.priority}</div>
     <div class="detail-meta-row"><strong>Project:</strong> ${ticket.project}</div>
     <div class="detail-meta-row"><strong>Branch:</strong> ${ticket.branch_name ?? 'N/A'}</div>
     <div class="detail-meta-row"><strong>Agent:</strong> ${ticket.current_agent ?? 'None'}</div>
+    <div class="detail-meta-row"><strong>Last modified:</strong> ${new Date(ticket.updated_at).toLocaleString()}</div>
+    <div class="detail-meta-row"><strong>Created:</strong> ${new Date(ticket.created_at).toLocaleString()}</div>
   `;
   panel.appendChild(meta);
 

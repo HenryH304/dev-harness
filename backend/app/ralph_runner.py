@@ -8,12 +8,15 @@ for that response and returns a SpawnResult.
 
 import asyncio
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from app.agents import get_agent_config, load_prompt
+
+logger = logging.getLogger(__name__)
 
 # Temp working directories for spec/story writers go here — must be on the
 # shared volume so the host executor can access them.
@@ -54,12 +57,22 @@ async def _spawn_via_host(cwd: str, timeout: int) -> int:
             }
         ),
     )
+    logger.info("Handed off to host executor — request_id=%s cwd=%s timeout=%ds", request_id, cwd, timeout)
 
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout + 60  # generous buffer over ralph's own timeout
+    ack_deadline = loop.time() + 30  # fail fast if executor never acknowledges
+    ack_received = False
     exit_code = 1
     try:
         while loop.time() < deadline:
+            # If no ACK within 30s the executor missed the pub/sub message — fail immediately
+            if not ack_received and loop.time() > ack_deadline:
+                logger.error(
+                    "No ACK from executor within 30s — spawn request lost (executor down?): cwd=%s request_id=%s",
+                    cwd, request_id,
+                )
+                break
             message = await pubsub.get_message(
                 ignore_subscribe_messages=True, timeout=1.0
             )
@@ -67,13 +80,14 @@ async def _spawn_via_host(cwd: str, timeout: int) -> int:
                 await asyncio.sleep(0.05)
                 continue
             data = json.loads(message["data"])
+            if data.get("type") == "ack":
+                ack_received = True
+                logger.info("ralph process confirmed running — pid=%s request_id=%s", data.get("pid"), request_id)
+                continue
             exit_code = data.get("exit_code", 1)
             break
         else:
-            import logging
-            logging.getLogger(__name__).warning(
-                "ralph spawn timed out waiting for host response: cwd=%s", cwd
-            )
+            logger.warning("ralph spawn timed out waiting for host response: cwd=%s", cwd)
     finally:
         await pubsub.unsubscribe(response_channel)
 
@@ -81,11 +95,24 @@ async def _spawn_via_host(cwd: str, timeout: int) -> int:
 
 
 def _make_work_dir(prefix: str) -> Path:
-    """Create a uniquely-named working directory under the shared work base."""
+    """Create a uniquely-named working directory under the shared work base.
+
+    Files are created world-writable so the host executor (different user than
+    the container) can write ralph.log and progress.txt into them.
+    """
+    import os
     _WORK_BASE.mkdir(parents=True, exist_ok=True)
     work_dir = _WORK_BASE / f"{prefix}-{uuid.uuid4().hex[:8]}"
     work_dir.mkdir()
+    os.chmod(work_dir, 0o777)
     return work_dir
+
+
+def _write_work_file(path: Path, content: str) -> None:
+    """Write a file and make it world-writable for the host executor."""
+    import os
+    path.write_text(content)
+    os.chmod(path, 0o666)
 
 
 def build_prd_json(
@@ -130,14 +157,16 @@ async def spawn_agent(
     prompt = load_prompt(agent_config.prompt_path)
 
     prd_data = build_prd_json(ticket, notes, agent_type)
-    (wt / "prd.json").write_text(json.dumps(prd_data, indent=2))
-    (wt / "prompt.md").write_text(prompt)
+    _write_work_file(wt / "prd.json", json.dumps(prd_data, indent=2))
+    _write_work_file(wt / "prompt.md", prompt)
     for filename in ("progress.txt", "ralph.log"):
         fp = wt / filename
         if not fp.exists():
-            fp.write_text("")
+            _write_work_file(fp, "")
 
-    timeout = agent_config.timeout
+    from app.config import fetch_db_overrides, load_config
+    db = await fetch_db_overrides()
+    timeout = load_config(db_overrides=db).agent_timeouts.get(agent_type, agent_config.timeout)
     exit_code = await _spawn_via_host(worktree_path, timeout)
 
     return SpawnResult(
@@ -180,10 +209,10 @@ async def spawn_prd_writer(
         ],
     }
 
-    (work_dir / "prd.json").write_text(json.dumps(input_prd, indent=2))
-    (work_dir / "prompt.md").write_text(prompt)
-    (work_dir / "progress.txt").write_text("")
-    (work_dir / "ralph.log").write_text("")
+    _write_work_file(work_dir / "prd.json", json.dumps(input_prd, indent=2))
+    _write_work_file(work_dir / "prompt.md", prompt)
+    _write_work_file(work_dir / "progress.txt", "")
+    _write_work_file(work_dir / "ralph.log", "")
 
     exit_code = await _spawn_via_host(str(work_dir), 600)
 
@@ -221,10 +250,10 @@ async def spawn_spec_writer(
     if existing_spec:
         input_prd["existingSpec"] = existing_spec
 
-    (work_dir / "prd.json").write_text(json.dumps(input_prd, indent=2))
-    (work_dir / "prompt.md").write_text(prompt)
-    (work_dir / "progress.txt").write_text("")
-    (work_dir / "ralph.log").write_text("")
+    _write_work_file(work_dir / "prd.json", json.dumps(input_prd, indent=2))
+    _write_work_file(work_dir / "prompt.md", prompt)
+    _write_work_file(work_dir / "progress.txt", "")
+    _write_work_file(work_dir / "ralph.log", "")
 
     exit_code = await _spawn_via_host(str(work_dir), 600)
 
@@ -268,10 +297,10 @@ async def spawn_story_converter(
         ],
     }
 
-    (work_dir / "prd.json").write_text(json.dumps(input_prd, indent=2))
-    (work_dir / "prompt.md").write_text(prompt)
-    (work_dir / "progress.txt").write_text("")
-    (work_dir / "ralph.log").write_text("")
+    _write_work_file(work_dir / "prd.json", json.dumps(input_prd, indent=2))
+    _write_work_file(work_dir / "prompt.md", prompt)
+    _write_work_file(work_dir / "progress.txt", "")
+    _write_work_file(work_dir / "ralph.log", "")
 
     exit_code = await _spawn_via_host(str(work_dir), 600)
 

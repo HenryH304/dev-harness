@@ -9,8 +9,9 @@ import {
   fetchUnresolvedDeps,
   applyDependencyIcons,
 } from './dependency-icons.js';
-import { fetchProjects } from './project-management.js';
-import { openAddStoryModal } from './add-story-modal.js';
+import { fetchProjects, setActivePriority } from './project-management.js';
+import { openAddStoryModal, openSpecReviewModal } from './add-story-modal.js';
+import { mountSpecProgressPanel, openSpecHistory } from './spec-progress-panel.js';
 import { openCreateProjectModal } from './create-project-modal.js';
 import { fetchPrompts, renderPromptsPanel, savePrompt } from './prompts-panel.js';
 import { renderSettingsPanel, saveSettings } from './settings-panel.js';
@@ -66,12 +67,19 @@ async function loadBoard(): Promise<void> {
         <select class="filter-select" id="project-filter">
           <option value="">All Projects</option>
         </select>
+        <button class="dash-btn" id="set-priority-btn" style="display:none" title="Set as active priority project">★ Set Priority</button>
       </div>
       <button class="dash-btn dash-btn-secondary" id="new-project-btn">+ New Project</button>
+      <button class="dash-btn" id="spec-history-btn">Spec History</button>
       <button class="dash-btn dash-btn-primary" id="add-story-btn">+ Add Story</button>
+      <button class="dash-btn" id="dispatch-toggle-btn" title="Toggle agent dispatch">...</button>
     </div>
   `;
   content.appendChild(filterBar);
+
+  const specPanelContainer = document.createElement('div');
+  specPanelContainer.hidden = true;
+  content.appendChild(specPanelContainer);
 
   const boardContainer = document.createElement('div');
   boardContainer.className = 'board';
@@ -84,18 +92,69 @@ async function loadBoard(): Promise<void> {
   let depStatus: DepStatus = {};
   let activeProject = '';
   let selectedFilter = '';
+  let panel = mountSpecProgressPanel(specPanelContainer, {
+    onReview: (specId) => openSpecReviewModal({
+      specId,
+      projects: [],
+      onClose: () => void panel.refresh(),
+    }),
+    onTasksCreated: () => loadBoard(),
+  });
+
+  // Dispatch toggle button
+  let dispatchEnabled = true;
+  const dispatchBtn = filterBar.querySelector<HTMLButtonElement>('#dispatch-toggle-btn')!;
+
+  function applyDispatchState(enabled: boolean): void {
+    dispatchEnabled = enabled;
+    if (enabled) {
+      dispatchBtn.textContent = '⏸ Pause Agents';
+      dispatchBtn.className = 'dash-btn dash-btn-warning';
+    } else {
+      dispatchBtn.textContent = '▶ Resume Agents';
+      dispatchBtn.className = 'dash-btn dash-btn-success';
+    }
+  }
+
+  dispatchBtn.addEventListener('click', async () => {
+    dispatchBtn.disabled = true;
+    const newValue = dispatchEnabled ? 'false' : 'true';
+    try {
+      const resp = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { agent_dispatch_enabled: newValue } }),
+      });
+      if (resp.ok) {
+        applyDispatchState(newValue === 'true');
+      }
+    } catch {
+      // silent — button re-enables regardless
+    } finally {
+      dispatchBtn.disabled = false;
+    }
+  });
 
   try {
-    const [ticketResp, deps, projectData] = await Promise.all([
+    const [ticketResp, deps, projectData, settingsResp] = await Promise.all([
       apiGet<Ticket[]>('/tickets'),
       fetchUnresolvedDeps(),
       fetchProjects(),
+      apiGet<{ settings: SettingsData }>('/settings'),
     ]);
     if (ticketResp.ok) {
       allTickets = ticketResp.data;
     }
     depStatus = deps;
     activeProject = projectData.active_priority_project;
+
+    // Initialise dispatch toggle from persisted setting
+    if (settingsResp.ok) {
+      const raw = settingsResp.data.settings['agent_dispatch_enabled'];
+      applyDispatchState(raw !== 'false');
+    } else {
+      applyDispatchState(true);
+    }
 
     // Populate filter dropdown
     const select = filterBar.querySelector<HTMLSelectElement>('#project-filter')!;
@@ -109,21 +168,45 @@ async function loadBoard(): Promise<void> {
       select.appendChild(opt);
     }
 
+    // Default filter to priority project if one is set and no filter already chosen
+    if (activeProject && !selectedFilter) {
+      selectedFilter = activeProject;
+      select.value = activeProject;
+    }
+
     // Wire "New Project" button
     document.querySelector<HTMLButtonElement>('#new-project-btn')!.addEventListener('click', () => {
       openCreateProjectModal({ onDone: () => loadBoard() });
+    });
+
+    document.querySelector<HTMLButtonElement>('#spec-history-btn')!.addEventListener('click', () => {
+      openSpecHistory();
+    });
+
+    const projectNames = projectData.projects.map((p) => p.name);
+
+    // Re-mount panel now that we have project names
+    panel.stop();
+    panel = mountSpecProgressPanel(specPanelContainer, {
+      onReview: (specId) => openSpecReviewModal({
+        specId,
+        projects: projectNames,
+        onClose: () => void panel.refresh(),
+      }),
+      onTasksCreated: () => loadBoard(),
     });
 
     // Wire "Add Story" button
     document.querySelector<HTMLButtonElement>('#add-story-btn')!.addEventListener('click', () => {
       openAddStoryModal({
         defaultProject: selectedFilter,
-        projects: projectData.projects.map((p) => p.name),
-        onDone: () => loadBoard(),
+        projects: projectNames,
+        onSpecSubmitted: () => void panel.refresh(),
       });
     });
   } catch {
     // continue with empty tickets
+    applyDispatchState(true);
   }
 
   function getFilteredTickets(): Ticket[] {
@@ -140,11 +223,40 @@ async function loadBoard(): Promise<void> {
 
   rerenderBoard();
 
-  // Filter change handler
+  // Filter change handler + Set Priority button
   const select = filterBar.querySelector<HTMLSelectElement>('#project-filter')!;
+  const setPriorityBtn = filterBar.querySelector<HTMLButtonElement>('#set-priority-btn')!;
+
+  function updateSetPriorityBtn(): void {
+    if (!selectedFilter || selectedFilter === activeProject) {
+      setPriorityBtn.style.display = 'none';
+    } else {
+      setPriorityBtn.style.display = '';
+      setPriorityBtn.textContent = `★ Set Priority`;
+    }
+  }
+  updateSetPriorityBtn();
+
   select.addEventListener('change', () => {
     selectedFilter = select.value;
     rerenderBoard();
+    updateSetPriorityBtn();
+  });
+
+  setPriorityBtn.addEventListener('click', async () => {
+    if (!selectedFilter) return;
+    setPriorityBtn.disabled = true;
+    const ok = await setActivePriority(selectedFilter);
+    if (ok) {
+      activeProject = selectedFilter;
+      // Update the ★ indicator in the dropdown
+      select.querySelectorAll('option').forEach((opt) => {
+        opt.textContent = opt.textContent?.replace(' ★', '') ?? '';
+        if (opt.value === activeProject) opt.textContent += ' ★';
+      });
+    }
+    setPriorityBtn.disabled = false;
+    updateSetPriorityBtn();
   });
 
   const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
@@ -162,7 +274,7 @@ async function loadBoard(): Promise<void> {
       applyDependencyIcons(b, freshDeps);
       setupDragDrop(b, _t);
     }
-  });
+  }, () => void panel.refresh());
 }
 
 async function loadDashboardPage(): Promise<void> {

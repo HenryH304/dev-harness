@@ -21,6 +21,7 @@ class Ticket(Base):
     acceptance_criteria: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="to_do")
+    previous_state: Mapped[str | None] = mapped_column(String(50), nullable=True)
     branch_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     worktree_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     current_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -30,6 +31,7 @@ class Ticket(Base):
     reviewer_timeouts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tester_timeouts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     merger_timeouts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    developer_failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     review_rejection_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tester_rejection_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime.datetime] = mapped_column(
@@ -105,6 +107,7 @@ class Project(Base):
 
     name: Mapped[str] = mapped_column(String(255), primary_key=True)
     repo_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )

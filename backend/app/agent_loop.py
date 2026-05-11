@@ -270,7 +270,7 @@ async def agent_event_listener() -> None:
                 _schedule_pickup("developer")
                 continue
 
-            if event_type in ("ticket_state_changed", "agent_failed"):
+            if event_type in ("ticket_state_changed", "agent_failed", "agent_completed"):
                 agent_type = STATE_TO_AGENT.get(new_state)
                 if agent_type:
                     _schedule_pickup(agent_type)
@@ -280,17 +280,38 @@ async def agent_event_listener() -> None:
 
 
 async def startup_scan() -> None:
-    """Sweep all input columns for waiting tickets on server start."""
+    """Sweep all input columns for waiting tickets on server start.
+
+    Also runs check_agent_timeouts immediately so tickets that completed
+    while the backend was down are advanced without waiting for the first
+    heartbeat, and genuinely stuck tickets are released.
+    """
+    from app.routers.agents import check_agent_timeouts
+
     await asyncio.sleep(2)  # let the server finish initialising
     logger.info("Agent loop: running startup scan")
+
+    session_factory = _get_session_factory()
+    try:
+        await check_agent_timeouts(session_factory)
+    except Exception as exc:
+        logger.error("Startup: timeout check failed: %s", exc)
+
     for agent_type in AGENT_TYPES:
         _schedule_pickup(agent_type)
 
 
 async def heartbeat_loop() -> None:
-    """Every 5 minutes, sweep all input columns to catch missed events."""
+    """Every 5 minutes, sweep all input columns and check for timed-out agents."""
+    from app.routers.agents import check_agent_timeouts
+
+    session_factory = _get_session_factory()
     while True:
         await asyncio.sleep(_HEARTBEAT_INTERVAL)
         logger.debug("Agent loop: heartbeat scan")
+        try:
+            await check_agent_timeouts(session_factory)
+        except Exception as exc:
+            logger.error("Heartbeat: timeout check failed: %s", exc)
         for agent_type in AGENT_TYPES:
             _schedule_pickup(agent_type)

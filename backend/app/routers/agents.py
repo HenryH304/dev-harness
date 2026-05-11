@@ -2,8 +2,12 @@
 
 import asyncio
 import datetime
+import logging
+from pathlib import Path
 import uuid
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case, select
@@ -108,7 +112,17 @@ async def pickup_ticket(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Unknown agent type: {agent_type}")
 
-    config = load_config()
+    # Load all DB settings in one query and merge into config
+    all_settings_result = await session.execute(select(Setting))
+    db_overrides = {row.key: row.value for row in all_settings_result.scalars().all()}
+    config = load_config(db_overrides=db_overrides)
+
+    # Honour global dispatch kill-switch
+    if db_overrides.get("agent_dispatch_enabled", "true") == "false":
+        raise HTTPException(
+            status_code=429,
+            detail="Agent dispatch is paused — resume via the board controls",
+        )
 
     # Check system-wide agent cap
     busy_count_result = await session.execute(
@@ -134,14 +148,24 @@ async def pickup_ticket(
                 detail="System near capacity — only higher-priority agent types allowed",
             )
 
-    # Get active priority project
-    priority_project: str | None = None
-    setting_result = await session.execute(
-        select(Setting).where(Setting.key == "active_priority_project")
-    )
-    setting = setting_result.scalar_one_or_none()
-    if setting is not None:
-        priority_project = setting.value
+    # Check per-agent-type concurrency cap
+    per_type_cap = config.max_agents_per_type.get(agent_type)
+    if per_type_cap is not None:
+        busy_type_count_result = await session.execute(
+            select(AgentRegistry).where(
+                AgentRegistry.status == "busy",
+                AgentRegistry.agent_type == agent_type,
+            )
+        )
+        busy_type_count = len(list(busy_type_count_result.scalars().all()))
+        if busy_type_count >= per_type_cap:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Agent type '{agent_type}' at capacity ({busy_type_count}/{per_type_cap})",
+            )
+
+    # Get active priority project from the already-loaded DB settings
+    priority_project: str | None = db_overrides.get("active_priority_project")
 
     # Find candidate tickets:
     # - In the agent type's column binding state
@@ -227,6 +251,7 @@ async def pickup_ticket(
     next_state = PICKUP_NEXT_STATE.get(agent_type, column_state)
     previous_state = picked_ticket.state
     if next_state != previous_state:
+        picked_ticket.previous_state = previous_state
         picked_ticket.state = next_state
     picked_ticket.current_agent = agent_id
     picked_ticket.assigned_at = datetime.datetime.now(datetime.timezone.utc)
@@ -261,6 +286,34 @@ async def pickup_ticket(
     return picked_ticket
 
 
+def _delete_worktree_background(ticket_id: int, project: str, worktree_path: str) -> None:
+    """Best-effort worktree deletion — runs synchronously but is non-fatal."""
+    import asyncio
+
+    from app.models import Project as ProjectModel
+
+    async def _run() -> None:
+        from app.main import engine
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        sf = async_sessionmaker(engine, expire_on_commit=False)
+        async with sf() as s:
+            proj = await s.get(ProjectModel, project)
+            if proj is None:
+                return
+        try:
+            from app.worktree import delete_worktree
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None, delete_worktree, ticket_id, proj.repo_path, worktree_path
+            )
+            logger.info("Deleted worktree for ticket %d: %s", ticket_id, worktree_path)
+        except Exception as exc:
+            logger.warning("Could not delete worktree for ticket %d: %s", ticket_id, exc)
+
+    asyncio.create_task(_run(), name=f"delete-worktree-{ticket_id}")
+
+
 @router.post("/complete/{ticket_id}", response_model=TicketResponse)
 async def complete_ticket(
     ticket_id: int,
@@ -286,6 +339,9 @@ async def complete_ticket(
         )
 
     agent_id = ticket.current_agent
+    worktree_path = ticket.worktree_path
+    project = ticket.project
+    ticket.previous_state = previous_state
     ticket.state = next_state
 
     # Release agent
@@ -293,6 +349,10 @@ async def complete_ticket(
 
     await session.commit()
     await session.refresh(ticket)
+
+    # Delete worktree once ticket is fully done (merger completed)
+    if next_state == "done" and worktree_path:
+        _delete_worktree_background(ticket_id, project, worktree_path)
 
     # Publish agent_completed event
     await publish_event(
@@ -329,13 +389,18 @@ async def fail_ticket(
 
     agent_id = ticket.current_agent
     previous_state = ticket.state
-    config = load_config()
+
+    all_settings_result = await session.execute(select(Setting))
+    db_overrides = {row.key: row.value for row in all_settings_result.scalars().all()}
+    config = load_config(db_overrides=db_overrides)
 
     # Determine agent type from agent_id (format: "{type}-{hex}")
     agent_type = agent_id.rsplit("-", 1)[0] if "-" in agent_id else agent_id
 
-    # Increment rejection counters
-    if agent_type == "reviewer":
+    # Increment rejection/failure counters
+    if agent_type == "developer":
+        ticket.developer_failure_count += 1
+    elif agent_type == "reviewer":
         ticket.review_rejection_count += 1
     elif agent_type == "tester":
         ticket.tester_rejection_count += 1
@@ -418,6 +483,8 @@ async def fail_ticket(
     # Release agent
     await _release_agent(session, ticket)
 
+    ticket.previous_state = previous_state
+
     # Merger failures always block — the agent already tried to resolve conflicts
     # and couldn't proceed; human intervention is required.
     if agent_type == "merger":
@@ -433,7 +500,23 @@ async def fail_ticket(
             note_type="failure",
         )
         session.add(blocked_note)
-    # Check if review rejection threshold reached
+    elif (
+        agent_type == "developer"
+        and ticket.developer_failure_count >= config.developer_failure_threshold
+    ):
+        ticket.state = "blocked"
+        blocked_note = Note(
+            ticket_id=ticket_id,
+            author="system",
+            content=(
+                f"Ticket blocked: developer failed "
+                f"{ticket.developer_failure_count} times "
+                f"(threshold: {config.developer_failure_threshold}).\n\n"
+                f"Last failure: {payload.reason}"
+            ),
+            note_type="failure",
+        )
+        session.add(blocked_note)
     elif (
         agent_type == "reviewer"
         and ticket.review_rejection_count >= config.review_rejection_threshold
@@ -446,6 +529,23 @@ async def fail_ticket(
                 f"Ticket blocked: review rejected "
                 f"{ticket.review_rejection_count} times "
                 f"(threshold: {config.review_rejection_threshold}).\n\n"
+                f"Last failure: {payload.reason}"
+            ),
+            note_type="failure",
+        )
+        session.add(blocked_note)
+    elif (
+        agent_type == "tester"
+        and ticket.tester_rejection_count >= config.tester_rejection_threshold
+    ):
+        ticket.state = "blocked"
+        blocked_note = Note(
+            ticket_id=ticket_id,
+            author="system",
+            content=(
+                f"Ticket blocked: tester failed "
+                f"{ticket.tester_rejection_count} times "
+                f"(threshold: {config.tester_rejection_threshold}).\n\n"
                 f"Last failure: {payload.reason}"
             ),
             note_type="failure",
@@ -493,7 +593,10 @@ async def check_agent_timeouts(
 
     This is designed to be called as a periodic background task.
     """
-    config = load_config()
+    from app.config import fetch_db_overrides, load_config as _load_config
+
+    db = await fetch_db_overrides()
+    config = _load_config(db_overrides=db)
     now = datetime.datetime.now(datetime.timezone.utc)
 
     async with session_factory() as session:
@@ -526,6 +629,48 @@ async def check_agent_timeouts(
 
             previous_state = ticket.state
             agent_id = ticket.current_agent
+            ticket.previous_state = previous_state
+
+            # Check ralph.log for COMPLETE marker — ralph may have finished but
+            # the result message was lost (e.g. backend restarted mid-spawn).
+            ralph_completed = False
+            if ticket.worktree_path:
+                ralph_log = Path(ticket.worktree_path) / "ralph.log"
+                try:
+                    if ralph_log.exists():
+                        content = ralph_log.read_text(errors="replace")
+                        ralph_completed = "<promise>COMPLETE</promise>" in content
+                except Exception:
+                    pass
+
+            if ralph_completed:
+                # Ralph finished — advance the ticket rather than failing it.
+                logger.info(
+                    "Timeout recovery: ralph.log shows COMPLETE for ticket %d — completing",
+                    ticket.id,
+                )
+                next_state = COMPLETE_NEXT_STATE.get(previous_state)
+                if next_state:
+                    ticket.state = next_state
+                    ticket.current_agent = None
+                    ticket.assigned_at = None
+                    agent_entry.status = "available"
+                    agent_entry.current_ticket_id = None
+                    await session.commit()
+                    await publish_event(
+                        "ticket:events",
+                        {
+                            "event_type": "agent_completed",
+                            "ticket_id": ticket.id,
+                            "agent_id": agent_id,
+                            "previous_state": previous_state,
+                            "new_state": next_state,
+                            "timestamp": now.isoformat(),
+                        },
+                    )
+                continue
+
+            # Ralph never ran or failed — increment counter and return/block.
 
             # Increment the correct timeout counter
             timeout_field = TIMEOUT_FIELD.get(agent_entry.agent_type)
@@ -533,8 +678,32 @@ async def check_agent_timeouts(
                 current_val: int = getattr(ticket, timeout_field)
                 setattr(ticket, timeout_field, current_val + 1)
 
-            # Return ticket to to_do
-            ticket.state = "to_do"
+            # Developer timeouts also count toward failure threshold
+            if agent_entry.agent_type == "developer":
+                ticket.developer_failure_count += 1
+
+            # Determine next state — block if threshold reached, else return to to_do
+            blocked_note: Note | None = None
+            if (
+                agent_entry.agent_type == "developer"
+                and ticket.developer_failure_count >= config.developer_failure_threshold
+            ):
+                ticket.state = "blocked"
+                blocked_note = Note(
+                    ticket_id=ticket.id,
+                    author="system",
+                    content=(
+                        f"Ticket blocked: developer failed (including timeouts) "
+                        f"{ticket.developer_failure_count} times "
+                        f"(threshold: {config.developer_failure_threshold}).\n\n"
+                        "Last failure: timeout"
+                    ),
+                    note_type="failure",
+                )
+                session.add(blocked_note)
+            else:
+                ticket.state = "to_do"
+
             ticket.current_agent = None
             ticket.assigned_at = None
 
@@ -544,7 +713,7 @@ async def check_agent_timeouts(
 
             await session.commit()
 
-            # Publish timeout event
+            new_state = ticket.state
             await publish_event(
                 "ticket:events",
                 {
@@ -552,8 +721,19 @@ async def check_agent_timeouts(
                     "ticket_id": ticket.id,
                     "agent_id": agent_id,
                     "previous_state": previous_state,
-                    "new_state": "to_do",
+                    "new_state": new_state,
                     "reason": "timeout",
                     "timestamp": now.isoformat(),
                 },
             )
+            if new_state == "blocked":
+                await publish_event(
+                    "ticket:events",
+                    {
+                        "event_type": "ticket_blocked",
+                        "ticket_id": ticket.id,
+                        "agent_id": agent_id,
+                        "reason": "timeout threshold reached",
+                        "timestamp": now.isoformat(),
+                    },
+                )

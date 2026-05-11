@@ -19,6 +19,7 @@ function makeTicketDetail(overrides: Partial<TicketDetail> = {}): TicketDetail {
     acceptance_criteria: ['Criterion 1', 'Criterion 2', 'Criterion 3'],
     priority: 2,
     state: 'in_progress',
+    previous_state: 'to_do',
     branch_name: 'ticket/1',
     worktree_path: '/tmp/worktree/1',
     current_agent: 'developer-abc123',

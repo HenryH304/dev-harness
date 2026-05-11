@@ -36,6 +36,7 @@ class TicketResponse(BaseModel):
     acceptance_criteria: list[Any]
     priority: int
     state: str
+    previous_state: str | None = None
     branch_name: str | None
     worktree_path: str | None
     current_agent: str | None

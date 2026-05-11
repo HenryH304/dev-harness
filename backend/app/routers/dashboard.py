@@ -224,34 +224,67 @@ async def force_unlock_ticket(
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    if ticket.current_agent is None:
+    # Blocked tickets have already had their agent released — still allow unlock
+    if ticket.current_agent is None and ticket.state != "blocked":
         raise HTTPException(status_code=400, detail="Ticket has no assigned agent")
 
     previous_state = ticket.state
     agent_id = ticket.current_agent
 
-    # Release agent from registry
-    agent_result = await session.execute(
-        select(AgentRegistry).where(
-            AgentRegistry.current_ticket_id == ticket.id,
-            AgentRegistry.status == "busy",
+    # Release any lingering agent registry entry
+    if agent_id:
+        agent_result = await session.execute(
+            select(AgentRegistry).where(
+                AgentRegistry.current_ticket_id == ticket.id,
+                AgentRegistry.status == "busy",
+            )
         )
-    )
-    agent_entry = agent_result.scalar_one_or_none()
-    if agent_entry:
-        agent_entry.status = "available"
-        agent_entry.current_ticket_id = None
+        agent_entry = agent_result.scalar_one_or_none()
+        if agent_entry:
+            agent_entry.status = "available"
+            agent_entry.current_ticket_id = None
 
-    # Reset ticket
+    # Determine the right target state.
+    # For blocked tickets, use previous_state (state before blocking).
+    # For stuck-active tickets (agent assigned but never completed), use current state.
+    _UNLOCK_TARGET: dict[str, str] = {
+        "in_progress":      "to_do",
+        "in_review":        "ready_for_review",
+        "in_test":          "ready_for_test",
+        "to_do":            "to_do",
+        "ready_for_review": "ready_for_review",
+        "ready_for_test":   "ready_for_test",
+        "ready_to_merge":   "ready_to_merge",
+    }
+    if ticket.state == "blocked":
+        lookup_state = ticket.previous_state or "to_do"
+    else:
+        lookup_state = ticket.state
+    new_state = _UNLOCK_TARGET.get(lookup_state, "to_do")
+
+    # Reset the failure counter that caused (or contributed to) the block
+    # so the ticket gets a fresh set of retries after manual intervention.
+    if lookup_state in ("in_progress", "to_do"):
+        ticket.developer_failure_count = 0
+    elif lookup_state in ("in_review", "ready_for_review"):
+        ticket.review_rejection_count = 0
+    elif lookup_state in ("in_test", "ready_for_test"):
+        ticket.tester_rejection_count = 0
+
+    ticket.previous_state = previous_state
     ticket.current_agent = None
     ticket.assigned_at = None
-    ticket.state = "to_do"
+    ticket.state = new_state
 
-    # Add note
+    note_content = (
+        f"Force unlocked by admin. Returned to '{new_state}'. "
+        f"{'Agent ' + agent_id + ' released. ' if agent_id else ''}"
+        "Failure counter reset."
+    )
     note = Note(
         ticket_id=ticket_id,
         author="system",
-        content=f"Force unlocked by admin. Agent {agent_id} released.",
+        content=note_content,
         note_type="general",
     )
     session.add(note)
@@ -265,7 +298,7 @@ async def force_unlock_ticket(
             "event_type": "ticket_state_changed",
             "ticket_id": ticket_id,
             "previous_state": previous_state,
-            "new_state": "to_do",
+            "new_state": new_state,
             "agent_id": agent_id,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         },

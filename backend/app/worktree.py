@@ -39,6 +39,61 @@ def _run_ralph_setup(worktree_path: str) -> None:
         logger.warning("Ralph setup script error for %s: %s", worktree_path, exc)
 
 
+def _git_env() -> dict[str, str]:
+    """Build git environment with author identity from env vars."""
+    import os
+    env = os.environ.copy()
+    # Ensure committer identity mirrors author if not separately set
+    if "GIT_COMMITTER_NAME" not in env and "GIT_AUTHOR_NAME" in env:
+        env["GIT_COMMITTER_NAME"] = env["GIT_AUTHOR_NAME"]
+    if "GIT_COMMITTER_EMAIL" not in env and "GIT_AUTHOR_EMAIL" in env:
+        env["GIT_COMMITTER_EMAIL"] = env["GIT_AUTHOR_EMAIL"]
+    return env
+
+
+def _ensure_git_repo(project: Path) -> None:
+    """Initialize a git repo with an initial commit on main if one doesn't exist."""
+    if (project / ".git").is_dir():
+        return
+
+    env = _git_env()
+    result = subprocess.run(
+        ["git", "init", "-b", "main"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        # Older git without -b support
+        subprocess.run(["git", "init"], cwd=project, capture_output=True, env=env)
+        subprocess.run(
+            ["git", "checkout", "-b", "main"],
+            cwd=project,
+            capture_output=True,
+            env=env,
+        )
+
+    subprocess.run(
+        ["git", "add", "."],
+        cwd=project,
+        capture_output=True,
+        env=env,
+    )
+    commit = subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", f"chore: initialise {project.name}"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if commit.returncode != 0:
+        raise WorktreeError(
+            f"Failed to create initial commit in {project}: {commit.stderr.strip()}"
+        )
+    logger.info("Initialised git repo in %s", project)
+
+
 def create_worktree(ticket_id: int, project_path: str) -> dict[str, str]:
     """Create a git worktree for a ticket, branched from main.
 
@@ -56,24 +111,19 @@ def create_worktree(ticket_id: int, project_path: str) -> dict[str, str]:
     if not project.exists():
         raise WorktreeError(f"Project path does not exist: {project_path}")
 
+    _ensure_git_repo(project)
+
     branch_name = f"ticket/{ticket_id}"
     worktree_dir = project.parent / f"{project.name}-ticket-{ticket_id}"
     worktree_path = str(worktree_dir)
 
     try:
         result = subprocess.run(
-            [
-                "git",
-                "worktree",
-                "add",
-                "-b",
-                branch_name,
-                worktree_path,
-                "main",
-            ],
+            ["git", "worktree", "add", "-b", branch_name, worktree_path, "main"],
             cwd=project_path,
             capture_output=True,
             text=True,
+            env=_git_env(),
         )
         if result.returncode != 0:
             raise WorktreeError(

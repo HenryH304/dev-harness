@@ -8,15 +8,22 @@ interface SettingsField {
   key: string;
   label: string;
   type: 'number' | 'text';
+  unit?: 'minutes'; // stored as seconds, displayed/edited as minutes
 }
 
 const SETTINGS_FIELDS: SettingsField[] = [
-  { key: 'agent_timeout_developer', label: 'Developer Timeout (s)', type: 'number' },
-  { key: 'agent_timeout_reviewer', label: 'Reviewer Timeout (s)', type: 'number' },
-  { key: 'agent_timeout_tester', label: 'Tester Timeout (s)', type: 'number' },
-  { key: 'agent_timeout_merger', label: 'Merger Timeout (s)', type: 'number' },
+  { key: 'agent_timeout_developer', label: 'Developer Timeout (min)', type: 'number', unit: 'minutes' },
+  { key: 'agent_timeout_reviewer', label: 'Reviewer Timeout (min)', type: 'number', unit: 'minutes' },
+  { key: 'agent_timeout_tester', label: 'Tester Timeout (min)', type: 'number', unit: 'minutes' },
+  { key: 'agent_timeout_merger', label: 'Merger Timeout (min)', type: 'number', unit: 'minutes' },
   { key: 'max_agents_system', label: 'Max Agents (System)', type: 'number' },
+  { key: 'max_agents_developer', label: 'Max Concurrent Developers', type: 'number' },
+  { key: 'max_agents_reviewer', label: 'Max Concurrent Reviewers', type: 'number' },
+  { key: 'max_agents_tester', label: 'Max Concurrent Testers', type: 'number' },
+  { key: 'max_agents_merger', label: 'Max Concurrent Mergers', type: 'number' },
   { key: 'review_rejection_threshold', label: 'Review Rejection Threshold', type: 'number' },
+  { key: 'developer_failure_threshold', label: 'Developer Failure Threshold', type: 'number' },
+  { key: 'tester_rejection_threshold', label: 'Tester Rejection Threshold', type: 'number' },
   { key: 'active_priority_project', label: 'Active Priority Project', type: 'text' },
 ];
 
@@ -26,7 +33,10 @@ export function renderSettingsPanel(
   onSave: (updated: SettingsData) => Promise<boolean>,
 ): void {
   const rows = SETTINGS_FIELDS.map((f) => {
-    const value = settings[f.key] ?? '';
+    const raw = settings[f.key] ?? '';
+    const value = (f.unit === 'minutes' && raw !== '')
+      ? String(Math.round(Number(raw) / 60))
+      : raw;
     return `
       <div class="settings-field">
         <label class="settings-label" for="setting-${f.key}">${f.label}</label>
@@ -34,6 +44,7 @@ export function renderSettingsPanel(
           class="settings-input"
           id="setting-${f.key}"
           data-key="${f.key}"
+          data-unit="${f.unit ?? ''}"
           type="${f.type}"
           value="${value}"
         />
@@ -56,7 +67,11 @@ export function renderSettingsPanel(
     container.querySelectorAll<HTMLInputElement>('.settings-input').forEach((input) => {
       const key = input.dataset.key;
       if (key) {
-        updated[key] = input.value;
+        const val = input.value;
+        // Convert minutes back to seconds for storage
+        updated[key] = (input.dataset.unit === 'minutes' && val !== '')
+          ? String(Math.round(Number(val) * 60))
+          : val;
       }
     });
 

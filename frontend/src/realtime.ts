@@ -27,7 +27,8 @@ export function setupRealtimeUpdates(
   dotEl: HTMLElement,
   labelEl: HTMLElement,
   tickets: Ticket[],
-  onRender?: (boardEl: HTMLElement, tickets: Ticket[]) => void
+  onRender?: (boardEl: HTMLElement, tickets: Ticket[]) => void,
+  onSpecUpdate?: () => void,
 ): void {
   let currentTickets = [...tickets];
 
@@ -45,6 +46,11 @@ export function setupRealtimeUpdates(
   });
 
   wsClient.onMessage(async (data: unknown) => {
+    if (typeof data === 'object' && data !== null && (data as Record<string, unknown>)['event_type'] === 'spec_update') {
+      onSpecUpdate?.();
+      return;
+    }
+
     if (!isTicketEvent(data)) return;
 
     // Re-fetch all tickets to get the latest state
@@ -53,7 +59,6 @@ export function setupRealtimeUpdates(
       if (response.ok) {
         currentTickets = response.data;
       } else {
-        // Fallback: update locally if the event carries enough info
         if (data.new_state) {
           currentTickets = applyStateChange(currentTickets, data);
         }

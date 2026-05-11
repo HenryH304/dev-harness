@@ -25,6 +25,17 @@ function getPriorityClass(priority: number): string {
   return 'low';
 }
 
+function timeAgo(iso: string): string {
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 export function renderCard(ticket: Ticket): HTMLElement {
   const card = document.createElement('div');
   card.className = 'card';
@@ -56,6 +67,12 @@ export function renderCard(ticket: Ticket): HTMLElement {
     agent.textContent = `🤖 ${agentLabel}`;
     meta.appendChild(agent);
   }
+
+  const age = document.createElement('span');
+  age.className = 'card-age';
+  age.title = new Date(ticket.updated_at).toLocaleString();
+  age.textContent = timeAgo(ticket.updated_at);
+  meta.appendChild(age);
 
   card.appendChild(meta);
 

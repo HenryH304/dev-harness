@@ -13,3 +13,4 @@ dist/
 nohup.out
 *.db
 backend/.venv/
+.venv/

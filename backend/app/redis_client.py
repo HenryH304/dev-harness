@@ -17,6 +17,8 @@ EVENT_TYPES: set[str] = {
     "agent_completed",
     "agent_failed",
     "ticket_blocked",
+    "spec_update",
+    "developer_work_available",
 }
 
 

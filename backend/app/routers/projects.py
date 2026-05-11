@@ -31,6 +31,7 @@ class ProjectInfo(BaseModel):
     name: str
     ticket_count: int
     repo_path: str
+    sort_order: int
 
 
 class ProjectListResponse(BaseModel):
@@ -106,13 +107,8 @@ async def create_project(
     git_dir = os.path.join(expanded_repo, ".git")
     if not os.path.isdir(git_dir):
         try:
-            git_env = {
-                **os.environ,
-                "GIT_AUTHOR_NAME": "DevHarness",
-                "GIT_AUTHOR_EMAIL": "devharness@local",
-                "GIT_COMMITTER_NAME": "DevHarness",
-                "GIT_COMMITTER_EMAIL": "devharness@local",
-            }
+            from app.worktree import _git_env
+            git_env = _git_env()
             # Try modern git (2.28+) that supports -b; fall back for older git
             init_result = subprocess.run(
                 ["git", "init", "-b", "main"],
@@ -150,7 +146,9 @@ async def create_project(
             )
 
     try:
-        session.add(Project(name=req.name, repo_path=expanded_repo))
+        max_order_result = await session.execute(select(func.max(Project.sort_order)))
+        max_order = max_order_result.scalar() or 0
+        session.add(Project(name=req.name, repo_path=expanded_repo, sort_order=max_order + 1))
         await session.commit()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}")
@@ -177,14 +175,14 @@ async def list_projects(
 
     # Left-join Project → Ticket to count tickets per project (including 0)
     stmt = (
-        select(Project.name, Project.repo_path, func.count(Ticket.id).label("ticket_count"))
+        select(Project.name, Project.repo_path, Project.sort_order, func.count(Ticket.id).label("ticket_count"))
         .select_from(outerjoin(Project, Ticket, Project.name == Ticket.project))
-        .group_by(Project.name, Project.repo_path)
-        .order_by(Project.name)
+        .group_by(Project.name, Project.repo_path, Project.sort_order)
+        .order_by(Project.sort_order.asc(), Project.name.asc())
     )
     result = await session.execute(stmt)
     projects = [
-        ProjectInfo(name=row.name, ticket_count=row.ticket_count, repo_path=row.repo_path)
+        ProjectInfo(name=row.name, ticket_count=row.ticket_count, repo_path=row.repo_path, sort_order=row.sort_order)
         for row in result.all()
     ]
 
@@ -238,7 +236,9 @@ async def import_project(
     if existing_project is not None:
         existing_project.repo_path = expanded_repo
     else:
-        session.add(Project(name=req.project_name, repo_path=expanded_repo))
+        max_order_result = await session.execute(select(func.max(Project.sort_order)))
+        max_order = max_order_result.scalar() or 0
+        session.add(Project(name=req.project_name, repo_path=expanded_repo, sort_order=max_order + 1))
 
     stories = prd_data["userStories"]
     count = 0
@@ -264,3 +264,37 @@ async def import_project(
         )
 
     return ProjectImportResponse(imported_count=count)
+
+
+class ReorderRequest(BaseModel):
+    direction: str  # "up" or "down"
+
+
+@router.patch("/{name}/order")
+async def reorder_project(
+    name: str,
+    req: ReorderRequest,
+    session: AsyncSession = Depends(_get_session),
+) -> dict[str, str]:
+    """Move a project up or down in priority order (1 = highest)."""
+    if req.direction not in ("up", "down"):
+        raise HTTPException(status_code=422, detail="direction must be 'up' or 'down'")
+
+    result = await session.execute(select(Project).order_by(Project.sort_order.asc(), Project.name.asc()))
+    all_projects = list(result.scalars().all())
+
+    idx = next((i for i, p in enumerate(all_projects) if p.name == name), None)
+    if idx is None:
+        raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
+
+    if req.direction == "up" and idx > 0:
+        swap = all_projects[idx - 1]
+    elif req.direction == "down" and idx < len(all_projects) - 1:
+        swap = all_projects[idx + 1]
+    else:
+        return {"status": "already at boundary"}
+
+    target = all_projects[idx]
+    target.sort_order, swap.sort_order = swap.sort_order, target.sort_order
+    await session.commit()
+    return {"status": "ok"}
