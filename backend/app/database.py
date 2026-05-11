@@ -42,6 +42,17 @@ async def _migrate_schema(conn: Any) -> None:
                 text(f"ALTER TABLE tickets ADD COLUMN {col} {definition}")
             )
 
+    # Rename legacy state values
+    await conn.execute(
+        text("UPDATE tickets SET state = 'ready_for_merge' WHERE state = 'ready_to_merge'")
+    )
+    await conn.execute(
+        text(
+            "UPDATE tickets SET previous_state = 'ready_for_merge'"
+            " WHERE previous_state = 'ready_to_merge'"
+        )
+    )
+
     proj_columns = await conn.execute(text("PRAGMA table_info(projects)"))
     existing_proj = {row[1] for row in proj_columns}
     if "sort_order" not in existing_proj:
