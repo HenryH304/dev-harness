@@ -106,10 +106,10 @@ describe('renderBoard', () => {
     container = document.createElement('div');
   });
 
-  it('renders all 9 columns', () => {
+  it('renders all 10 columns', () => {
     renderBoard(container, []);
     const columns = container.querySelectorAll('.column');
-    expect(columns).toHaveLength(9);
+    expect(columns).toHaveLength(10);
   });
 
   it('renders column labels', () => {
@@ -124,7 +124,8 @@ describe('renderBoard', () => {
     expect(labels).toContain('In Review');
     expect(labels).toContain('Ready for Test');
     expect(labels).toContain('In Test');
-    expect(labels).toContain('Ready to Merge');
+    expect(labels).toContain('Ready for Merge');
+    expect(labels).toContain('In Merge');
     expect(labels).toContain('Done');
     expect(labels).toContain('Blocked');
   });
@@ -150,21 +151,15 @@ describe('renderBoard', () => {
       makeTicket({ id: 2, state: 'blocked', title: 'Blocked ticket' }),
     ];
     renderBoard(container, tickets);
-    const columns = container.querySelectorAll('.column');
-    const todoCol = columns[0]; // first column is to_do
-    const blockedCol = columns[8]; // last column is blocked
-    expect(todoCol.querySelector('.card-title')?.textContent).toBe(
-      'Todo ticket'
-    );
-    expect(blockedCol.querySelector('.card-title')?.textContent).toBe(
-      'Blocked ticket'
-    );
+    const todoCol = container.querySelector('.column[data-column="to_do"]')!;
+    const blockedCol = container.querySelector('.column[data-column="blocked"]')!;
+    expect(todoCol.querySelector('.card-title')?.textContent).toBe('Todo ticket');
+    expect(blockedCol.querySelector('.card-title')?.textContent).toBe('Blocked ticket');
   });
 
   it('blocked column has blocked-column class', () => {
     renderBoard(container, []);
-    const columns = container.querySelectorAll('.column');
-    const blockedCol = columns[8];
+    const blockedCol = container.querySelector('.column[data-column="blocked"]')!;
     expect(blockedCol.classList.contains('column--blocked')).toBe(true);
   });
 
@@ -172,6 +167,6 @@ describe('renderBoard', () => {
     container.innerHTML = '<p>old content</p>';
     renderBoard(container, []);
     expect(container.querySelector('p')).toBeNull();
-    expect(container.querySelectorAll('.column')).toHaveLength(9);
+    expect(container.querySelectorAll('.column')).toHaveLength(10);
   });
 });

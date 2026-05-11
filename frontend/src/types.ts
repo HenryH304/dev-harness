@@ -29,7 +29,8 @@ export const COLUMNS = [
   { key: 'in_review', label: 'In Review' },
   { key: 'ready_for_test', label: 'Ready for Test' },
   { key: 'in_test', label: 'In Test' },
-  { key: 'ready_to_merge', label: 'Ready to Merge' },
+  { key: 'ready_for_merge', label: 'Ready for Merge' },
+  { key: 'in_merge', label: 'In Merge' },
   { key: 'done', label: 'Done' },
 ] as const;
 

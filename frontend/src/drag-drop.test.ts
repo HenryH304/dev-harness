@@ -40,7 +40,8 @@ describe('ALLOWED_TRANSITIONS', () => {
     expect(ALLOWED_TRANSITIONS['to_do']).toContain('in_progress');
     expect(ALLOWED_TRANSITIONS['to_do']).toContain('blocked');
     expect(ALLOWED_TRANSITIONS['in_progress']).toContain('ready_for_review');
-    expect(ALLOWED_TRANSITIONS['ready_to_merge']).toContain('done');
+    expect(ALLOWED_TRANSITIONS['ready_for_merge']).toContain('in_merge');
+    expect(ALLOWED_TRANSITIONS['in_merge']).toContain('done');
   });
 
   it('blocked state allows transition to any state (manual override)', () => {

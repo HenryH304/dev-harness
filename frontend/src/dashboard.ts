@@ -59,7 +59,8 @@ const COLUMN_LABELS: Record<string, string> = {
   in_review: 'In Review',
   ready_for_test: 'Ready for Test',
   in_test: 'In Test',
-  ready_to_merge: 'Ready to Merge',
+  ready_for_merge: 'Ready for Merge',
+  in_merge: 'In Merge',
   done: 'Done',
   blocked: 'Blocked',
 };
