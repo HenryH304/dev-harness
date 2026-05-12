@@ -85,3 +85,14 @@ Started: Tue, 12 May 2026 14:42:07 BST
   - Test isolation: the full test suite has a pre-existing flaky websocket test (`test_websocket_endpoint_connects` in test_us027) that fails on connection-count ordering when run in sequence but passes in isolation — not related to beads work
   - Run tests with `.venv/bin/pytest` (SQLAlchemy 2.0.36 in venv), not system python3 (SQLAlchemy 1.4.50)
 ---
+
+## 2026-05-12 - US-007
+- What was implemented: Added `merger_resume_count` column to Ticket model and DB migration; added `_get_beads_timeout_info()` (subprocess helper using `bd list --json` and `bd list --json --all` to determine open vs total bead counts) and `_classify_merger_timeout()` (pure classification returning resume/cap_exceeded/no_progress/blocker/no_beads) to agent_loop.py; added merger-specific beads resumability logic to `check_agent_timeouts()` in agents.py (re-dispatches if partial progress + resume_count < 3, blocks if cap reached, falls through to existing timeout logic for no-progress/blocker/no_beads cases).
+- Files changed: backend/app/models.py (merger_resume_count column), backend/app/database.py (migration entry), backend/app/agent_loop.py (_get_beads_timeout_info, _classify_merger_timeout helpers), backend/app/routers/agents.py (merger resumability in check_agent_timeouts), backend/tests/test_beads_us007_timeout.py (new, 19 tests), backend/tests/test_in_merge_us001_db_migration.py (INSERT templates updated for new column), prd.json (US-007 passes: true)
+- **Patterns added to Codebase Patterns:** None - no new patterns discovered (SQLAlchemy default=0 is Python-side only, not a server_default — raw SQL INSERTs must explicitly include new NOT NULL columns; but this was already known behavior)
+- **Learnings for future iterations:**
+  - `mapped_column(Integer, nullable=False, default=0)` sets a Python-side INSERT default only; raw SQL inserts in tests must explicitly include the column or the NOT NULL constraint fires
+  - `bd list --json` returns open (unclosed) beads only; `bd list --json --all` returns all beads (open + closed) — use both to detect partial progress (closed_count = total - open)
+  - The `check_agent_timeouts` function in agents.py uses inline imports (`from app.agent_loop import ...`) inside the function body to avoid circular imports at module load time
+  - Pre-existing mypy errors (4) and ruff lint errors (32 in app/) existed before this story; verify with git stash + re-check rather than assuming new errors are yours
+---

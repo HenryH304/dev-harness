@@ -119,8 +119,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "merger_resume_count column added to Ticket model and _migrate_schema(). _get_beads_timeout_info() runs bd list --json (open) and bd list --json --all (total) to detect partial progress. _classify_merger_timeout() returns resume/cap_exceeded/no_progress/blocker/no_beads. check_agent_timeouts() in agents.py re-dispatches merger if partial progress and resume_count < 3; blocks at count >= 3; falls through to existing timeout logic for no-progress or blocker cases."
     }
   ]
 }
