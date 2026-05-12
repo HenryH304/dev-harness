@@ -3,6 +3,11 @@ Started: Tue, 12 May 2026 14:42:07 BST
 ---
 
 ## Codebase Patterns
+- bd formulas use TOML format with `.formula.toml` extension (not YAML); search path is `<checkout-root>/.beads/formulas/`
+- `bd mol wisp` creates only the root issue (1 issue); use `bd mol pour` to materialize all 5 phase beads as separate issues
+- `bd list --json --all` returns a flat array; each issue has `dependencies[]` with `type: "blocks"` for sequential deps and `type: "parent-child"` for hierarchy
+- `bd cook <formula>` requires an active bd database; use full file path (`bd cook /abs/path/to.formula.toml`) from a `bd init`-ed directory
+- `bd cook --dry-run` validates formula structure without writing to the database
 - dolt uses `dolt version` (not `dolt --version`) — the `--version` flag is invalid for dolt
 - bd (beads) installed via `CGO_ENABLED=0 go install github.com/steveyegge/beads/cmd/bd@latest`; binary lands in ~/go/bin — symlink to ~/.local/bin for PATH availability
 - bd requires CGO build (`go install` without CGO_ENABLED=0) for embedded Dolt mode; CGO_ENABLED=0 build requires `bd init --server` with an external dolt sql-server running
@@ -34,4 +39,16 @@ Started: Tue, 12 May 2026 14:42:07 BST
   - For local file remotes in dolt, always use `file:///abs/path` — bare paths are silently treated as DoltHub names
   - dolt user identity must be set via `dolt config --global --add user.email/user.name` before `dolt init`; git config is not used
   - The bd CGO build is already on the machine at ~/go/bin/bd (symlinked to ~/.local/bin/bd)
+---
+
+## 2026-05-12 - US-003
+- What was implemented: Created merge-molecule.formula.toml with 5 phase beads (fetch-main → rebase → run-tests → merge-push → cleanup) and execution_agent_type = "merger" metadata
+- Files changed: .beads/formulas/merge-molecule.formula.toml (new), backend/beads/merge-molecule.formula.toml (copy for reference), backend/tests/test_beads_us003_molecule.py (new, 14 tests), prd.json (US-003 passes: true)
+- **Patterns added to Codebase Patterns:** 5 new patterns (TOML format, wisp vs pour, bd list --json structure, bd cook path, bd cook --dry-run)
+- **Learnings for future iterations:**
+  - `bd molecule` command does not exist; the correct command group is `bd mol` (alias: `protomolecule`)
+  - Formulas are `.formula.toml` files (TOML), not YAML; file must be in `.beads/formulas/` for bd to discover it
+  - `bd mol wisp` only materializes the root issue; use `bd mol pour` to get all child step beads
+  - `bd list --json` returns a flat array of all issues including children; each issue's `dependencies` array has `type: "blocks"` for step order deps
+  - `bd formula list` works from a directory without a bd db (reads `.beads/formulas/` from git root); `bd cook` requires a db
 ---

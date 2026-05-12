@@ -47,8 +47,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Formula at .beads/formulas/merge-molecule.formula.toml (TOML, not YAML). Uses bd mol pour to spawn. bd list --json returns flat list with dependencies array (type: blocks for sequential deps). Five steps: fetch-main -> rebase -> run-tests -> merge-push -> cleanup. execution_agent_type stored under [metadata] table."
     },
     {
       "id": "US-004",
