@@ -5,6 +5,10 @@ Started: Tue, 12 May 2026 14:42:07 BST
 ## Codebase Patterns
 - dolt uses `dolt version` (not `dolt --version`) — the `--version` flag is invalid for dolt
 - bd (beads) installed via `CGO_ENABLED=0 go install github.com/steveyegge/beads/cmd/bd@latest`; binary lands in ~/go/bin — symlink to ~/.local/bin for PATH availability
+- bd requires CGO build (`go install` without CGO_ENABLED=0) for embedded Dolt mode; CGO_ENABLED=0 build requires `bd init --server` with an external dolt sql-server running
+- dolt file remotes use `file:///absolute/path` URL format; bare paths are treated as DoltHub remote names and cause push failures
+- BEADS_REMOTE_PATH is stored as a `file://` URL (e.g. `file:///home/user/project/.beads-remote`), not a bare path
+- dolt requires user identity (`dolt config --global --add user.email/user.name`) before `dolt init` works; it does NOT fall back to git global config
 - SQLAlchemy identity map + `expire_on_commit=False`: when a test session creates an object, commits it, then an HTTP call (different session) mutates it, the test session returns the stale cached object unless you call `session.expire(obj)` before re-querying
 - `_ensure_git_repo` in worktree.py runs git init BEFORE the `try/except SubprocessError` block — tests that mock subprocess.run must pre-create `.git/` in the tmp dir to skip it (otherwise the first captured call is `git init`, not `git worktree add`)
 - AppConfig uses `max_agents_per_type` (dict, per-agent) not `max_agents_per_column` (removed scalar)
@@ -19,4 +23,15 @@ Started: Tue, 12 May 2026 14:42:07 BST
   - Beads is the real tool at github.com/steveyegge/beads — requires Go 1.26+, installs as bd
   - Dolt install.sh requires root; use direct binary download to ~/.local/bin instead
   - Pre-existing test failures (11) were fixed as part of this story to maintain green CI
+---
+
+## 2026-05-12 - US-002
+- What was implemented: scripts/init-beads-remote.sh creates a Dolt repo at BEADS_REMOTE_PATH; .env.example and .gitignore updated; install-deps.sh updated to build bd with CGO for embedded Dolt mode
+- Files changed: scripts/init-beads-remote.sh (new), scripts/install-deps.sh (updated CGO build), .env.example (BEADS_REMOTE_PATH), .gitignore (.beads-remote/), backend/tests/test_beads_us002_remote.py (new, 9 tests), prd.json (US-002 passes: true)
+- **Patterns added to Codebase Patterns:** 4 new patterns (CGO requirement, file:// URL format, BEADS_REMOTE_PATH format, dolt identity)
+- **Learnings for future iterations:**
+  - bd with CGO_ENABLED=0 cannot use embedded Dolt; requires `bd init --server` and a running `dolt sql-server`
+  - For local file remotes in dolt, always use `file:///abs/path` — bare paths are silently treated as DoltHub names
+  - dolt user identity must be set via `dolt config --global --add user.email/user.name` before `dolt init`; git config is not used
+  - The bd CGO build is already on the machine at ~/go/bin/bd (symlinked to ~/.local/bin/bd)
 ---
