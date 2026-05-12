@@ -52,3 +52,13 @@ Started: Tue, 12 May 2026 14:42:07 BST
   - `bd list --json` returns a flat array of all issues including children; each issue's `dependencies` array has `type: "blocks"` for step order deps
   - `bd formula list` works from a directory without a bd db (reads `.beads/formulas/` from git root); `bd cook` requires a db
 ---
+
+## 2026-05-12 - US-004
+- What was implemented: Updated merger.md with beads initialization and phase loop. Added beads init section (bd init + remote for fresh start; bd dolt pull for resume), molecule spawn guarded by bd list --json check, phase loop using bd ready --json --limit 1 → bd close → bd dolt push for each phase, COMPLETE only after cleanup bead closed.
+- Files changed: backend/prompts/merger.md (major restructure), backend/tests/test_beads_us004_merger_md.py (new, 16 tests), prd.json (US-004 passes: true)
+- **Patterns added to Codebase Patterns:** None - no new patterns discovered (bd ready --json --limit 1 and bd close are straightforward; resumability test confirmed bd correctly gates downstream phases on upstream closures)
+- **Learnings for future iterations:**
+  - `bd ready --json --limit 1` returns a JSON array of claimable beads; subsequent phases are gated by bead dependencies and only appear in bd ready after their blockers are closed
+  - `bd ready` has `--claim` flag for atomic claim-and-lock; for the merger agent prompt `--json --limit 1` is sufficient since the agent runs serially
+  - The test `rfind("keyword")` trick for ordering checks can backfire when the keyword appears in multiple sections; use `find` (first occurrence) for simpler ordering assertions
+---
