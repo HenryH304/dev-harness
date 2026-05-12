@@ -1,26 +1,22 @@
 # Ralph Progress Log
-Started: Mon, 11 May 2026 22:31:34 BST
+Started: Tue, 12 May 2026 14:42:07 BST
 ---
 
 ## Codebase Patterns
-- In-memory SQLite tests: must import `app.models` before calling `Base.metadata.create_all` so models register themselves; use a single persistent `await engine.connect()` connection to avoid in-memory DB being lost between connection opens
-- Backend test fixtures for Ticket inserts via raw SQL must supply all NOT NULL columns without `server_default` (agent_attempts, developer_timeouts, reviewer_timeouts, tester_timeouts, merger_timeouts, developer_failure_count, review_rejection_count, tester_rejection_count)
-- When renaming/adding states, update in order: DB migration → AGENT_TYPES → STATE_TO_AGENT → PICKUP_NEXT_STATE → COMPLETE_NEXT_STATE → ALLOWED_TRANSITIONS (backend) → ColumnCounts + all_states + _UNLOCK_TARGET (dashboard) → COLUMNS + ALLOWED_TRANSITIONS (frontend) → test fixtures
-- The board.test.ts column-index tests (`columns[N]`) were fragile/wrong — prefer `container.querySelector('.column[data-column="KEY"]')` for robust column selection
+- dolt uses `dolt version` (not `dolt --version`) — the `--version` flag is invalid for dolt
+- bd (beads) installed via `CGO_ENABLED=0 go install github.com/steveyegge/beads/cmd/bd@latest`; binary lands in ~/go/bin — symlink to ~/.local/bin for PATH availability
+- SQLAlchemy identity map + `expire_on_commit=False`: when a test session creates an object, commits it, then an HTTP call (different session) mutates it, the test session returns the stale cached object unless you call `session.expire(obj)` before re-querying
+- `_ensure_git_repo` in worktree.py runs git init BEFORE the `try/except SubprocessError` block — tests that mock subprocess.run must pre-create `.git/` in the tmp dir to skip it (otherwise the first captured call is `git init`, not `git worktree add`)
+- AppConfig uses `max_agents_per_type` (dict, per-agent) not `max_agents_per_column` (removed scalar)
 
 ---
 
-## 2026-05-11 - US-001 through US-008 (in_merge_state PRD)
-- Implemented full `ready_to_merge` → `ready_for_merge` rename + new `in_merge` active state for merger agent
-- **US-001**: `backend/app/database.py` — added two UPDATE statements in `_migrate_schema()` to rename existing DB rows
-- **US-002**: `backend/app/agents.py`, `agent_loop.py`, `routers/agents.py` — merger column_binding, STATE_TO_AGENT, PICKUP_NEXT_STATE, COMPLETE_NEXT_STATE updated; updated stale tests in test_us011, test_us012, test_us013, test_us027
-- **US-003**: `backend/app/routers/transitions.py` — ALLOWED_TRANSITIONS updated for new state chain; updated test_us007_transitions.py
-- **US-004**: `backend/app/routers/dashboard.py` — ColumnCounts renamed ready_to_merge→ready_for_merge, added in_merge; all_states updated; _UNLOCK_TARGET updated
-- **US-005/006/007**: `frontend/src/types.ts`, `drag-drop.ts`, `dashboard.ts` — COLUMNS, ALLOWED_TRANSITIONS, COLUMN_LABELS updated
-- **US-008**: `frontend/src/drag-drop.test.ts`, `dashboard.test.ts`, `board.test.ts` — all fixtures updated; added `columns.test.ts` for types.ts coverage
-- Files changed: backend/app/database.py, agents.py, agent_loop.py, routers/agents.py, routers/transitions.py, routers/dashboard.py, 5 backend test files, 4 frontend source files, 4 frontend test files + 1 new test file
-- **Patterns added to Codebase Patterns:** See section above
+## 2026-05-12 - US-001
+- What was implemented: Installed dolt 2.0.1 and bd (beads) 1.0.4 on host; created scripts/install-deps.sh
+- Files changed: scripts/install-deps.sh (new), backend/tests/test_beads_us001_install.py (new), backend/tests/test_us002_config.py (stale max_agents_per_column → max_agents_per_type fix), backend/tests/test_us007_transitions.py (session.expire fix), backend/tests/test_us010_worktree.py (pre-create .git fix)
+- **Patterns added to Codebase Patterns:** All five patterns above (dolt syntax, bd install, SQLAlchemy identity map, _ensure_git_repo ordering, AppConfig rename)
 - **Learnings for future iterations:**
-  - board.test.ts was using hard-coded column indices (`columns[8]`) that were already wrong before this PR (blocked is index 1, not 8) — fixed by switching to `data-column` attribute queries
-  - Pre-existing failing tests in the suite: test_us002_config (max_agents_per_column attr), test_us010_worktree (git path), test_us026_project_management (Redis), api.test.ts (mock missing `.text()`), settings-panel.test.ts (unrelated)
+  - Beads is the real tool at github.com/steveyegge/beads — requires Go 1.26+, installs as bd
+  - Dolt install.sh requires root; use direct binary download to ~/.local/bin instead
+  - Pre-existing test failures (11) were fixed as part of this story to maintain green CI
 ---

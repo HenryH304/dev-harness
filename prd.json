@@ -1,128 +1,125 @@
 {
   "project": "dev-harness",
-  "branchName": "feature/in-merge-state",
-  "description": "Add in_merge active state for the merger agent and rename ready_to_merge → ready_for_merge for naming consistency across all queue states.",
+  "branchName": "feature/beads-merger-integration",
+  "description": "Integrate beads (bd) Dolt-backed task graph into the merger pipeline as a durable checkpoint layer — making merges resumable after crashes/timeouts, giving per-file conflict visibility, and enabling the backend to distinguish transient failures (retry) from genuine blockers (block).",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Migrate existing DB rows: ready_to_merge → ready_for_merge",
-      "description": "As a system operator, I want existing tickets in ready_to_merge automatically migrated to ready_for_merge on server startup so no manual intervention is required.",
+      "title": "Install beads and Dolt on the host",
+      "description": "As a developer, I need bd and dolt available on the host machine so the merger agent can use them when ralph runs.",
       "acceptanceCriteria": [
-        "In backend/app/database.py _migrate_schema(): add UPDATE tickets SET state = 'ready_for_merge' WHERE state = 'ready_to_merge'",
-        "Same migration for previous_state column: UPDATE tickets SET previous_state = 'ready_for_merge' WHERE previous_state = 'ready_to_merge'",
-        "Both UPDATE statements are idempotent (re-running produces no changes)",
+        "dolt binary is installed and dolt --version succeeds in the shell where executor.py runs",
+        "bd CLI is installed and bd --version succeeds in the same shell",
+        "A scripts/install-deps.sh script documents and automates the installation of both tools",
+        "make start still works after installation with no regressions",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": ""
+      "notes": "dolt 2.0.1 installed to ~/.local/bin; bd 1.0.4 installed via go install, symlinked to ~/.local/bin. Note: dolt uses 'dolt version' not 'dolt --version'."
     },
     {
       "id": "US-002",
-      "title": "Update backend state machine: merger pickup → in_merge, complete → done",
-      "description": "As a developer, I need the backend state machine to route the merger agent through ready_for_merge → in_merge → done so the ticket state accurately reflects agent activity.",
+      "title": "Initialize local Dolt remote for the project",
+      "description": "As a developer, I need a shared local Dolt remote on the filesystem so all worktrees for the dev-harness project can push and pull beads state to a common location.",
       "acceptanceCriteria": [
-        "backend/app/agents.py: AGENT_TYPES['merger']['column_binding'] is 'ready_for_merge' (was 'ready_to_merge')",
-        "backend/app/agent_loop.py: STATE_TO_AGENT has key 'ready_for_merge' mapping to 'merger'; key 'ready_to_merge' is removed",
-        "backend/app/routers/agents.py: PICKUP_NEXT_STATE['merger'] is 'in_merge' (was 'ready_to_merge')",
-        "backend/app/routers/agents.py: COMPLETE_NEXT_STATE has 'in_merge': 'done'; 'ready_to_merge' key is removed",
+        "A scripts/init-beads-remote.sh script creates the local Dolt remote at a configurable path (default: <project-root>/.beads-remote/)",
+        "The remote path is stored in .env and .env.example as BEADS_REMOTE_PATH",
+        "Running the script twice is idempotent (no error on second run)",
+        "The .beads-remote/ directory is added to .gitignore",
+        "Running bd init && bd dolt remote add origin $BEADS_REMOTE_PATH && bd dolt push from a test worktree succeeds without error",
         "Typecheck passes"
       ],
-      "priority": 1,
-      "passes": true,
+      "priority": 2,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-003",
-      "title": "Update backend allowed transitions for new states",
-      "description": "As a developer, I need the transitions router to allow the new state sequence so manual and agent-driven transitions are validated correctly.",
+      "title": "Define the merge molecule template",
+      "description": "As a developer, I need a beads molecule template that represents the phases of a merge job so the merger agent can spawn it at the start of each merge.",
       "acceptanceCriteria": [
-        "backend/app/routers/transitions.py: in_test allowed set contains 'ready_for_merge' (not 'ready_to_merge')",
-        "'ready_to_merge' key is removed from ALLOWED_TRANSITIONS",
-        "'ready_for_merge': {'in_merge', 'blocked'} is present in ALLOWED_TRANSITIONS",
-        "'in_merge': {'done', 'blocked'} is present in ALLOWED_TRANSITIONS",
+        "A molecule file exists at backend/beads/merge-molecule.yml (or the correct format beads supports — check bd molecule --help)",
+        "Molecule defines five top-level phase beads with explicit dependencies: fetch-main -> rebase -> run-tests -> merge-push -> cleanup",
+        "Molecule includes metadata field execution_agent_type: merger",
+        "bd molecule spawn (or equivalent command) produces the expected bead graph in a test worktree",
+        "bd list --json output contains the five phase beads with correct dependency edges after spawning",
         "Typecheck passes"
       ],
-      "priority": 1,
-      "passes": true,
+      "priority": 3,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-004",
-      "title": "Update dashboard ColumnCounts model and force-unlock routing",
-      "description": "As an operator, I want the dashboard metrics to show ready_for_merge and in_merge counts, and force-unlock to correctly return an in_merge ticket to ready_for_merge.",
+      "title": "Update merger.md — beads initialization and phase loop",
+      "description": "As the merger agent, I need to initialize beads at the start of a merge and work through phase beads using bd ready, so my progress is checkpointed after every phase.",
       "acceptanceCriteria": [
-        "backend/app/routers/dashboard.py: ColumnCounts Pydantic model has field ready_for_merge: int = 0 (renamed from ready_to_merge)",
-        "ColumnCounts has new field in_merge: int = 0",
-        "all_states list in get_metrics contains 'ready_for_merge' and 'in_merge' (not 'ready_to_merge')",
-        "_UNLOCK_TARGET maps 'ready_for_merge' to 'ready_for_merge' and 'in_merge' to 'ready_for_merge'",
-        "GET /api/dashboard/metrics response includes ready_for_merge and in_merge fields",
+        "merger.md instructs the agent to run bd init and bd dolt remote add origin $BEADS_REMOTE_PATH at the start if no .beads/ directory exists in the worktree",
+        "If .beads/ already exists, the agent runs bd dolt pull to restore prior progress before calling bd ready",
+        "Agent spawns the merge molecule if bd list --json returns no beads; otherwise skips molecule creation",
+        "For each phase bead returned by bd ready --json --limit 1, the agent performs the corresponding git work, then calls bd close <id> and bd dolt push before moving to the next bead",
+        "The <promise>COMPLETE</promise> signal is only written after the cleanup bead is closed",
+        "A fresh merge (no prior beads) completes end-to-end and the ticket reaches done state",
+        "A simulated resume (manually pre-close the fetch-main bead, then run merger) skips fetch and begins at rebase",
         "Typecheck passes"
       ],
-      "priority": 2,
-      "passes": true,
+      "priority": 4,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-005",
-      "title": "Update frontend board columns: rename to ready_for_merge, add in_merge",
-      "description": "As a board user, I want to see two separate columns — Ready for Merge and In Merge — replacing the old single Ready to Merge column.",
+      "title": "Create and clean up per-file conflict sub-beads",
+      "description": "As the merger agent, I need to create one child bead per conflicting file during rebase so each file's resolution is tracked individually, then clean up beads state after a successful merge.",
       "acceptanceCriteria": [
-        "frontend/src/types.ts COLUMNS array: ready_to_merge entry replaced by { key: 'ready_for_merge', label: 'Ready for Merge' } followed by { key: 'in_merge', label: 'In Merge' } before done",
-        "ready_to_merge does not appear anywhere in the frontend source",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
+        "After git rebase origin/main reports conflicts, the agent runs git status --short to identify all conflicted files",
+        "For each conflicted file, the agent creates a child bead under the rebase bead: bd create resolve-conflict:<filename> --parent <rebase-bead-id>",
+        "The agent resolves each file, then calls bd close <conflict-bead-id> and bd dolt push per file before continuing rebase",
+        "The run-tests bead only becomes ready (returned by bd ready) after all conflict sub-beads are closed",
+        "After the cleanup bead is closed, the agent calls bd dolt push then removes the .beads/ directory from the worktree with rm -rf .beads/",
+        "If no conflicts occur during rebase, no conflict sub-beads are created",
+        "Typecheck passes"
       ],
-      "priority": 2,
-      "passes": true,
+      "priority": 5,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-006",
-      "title": "Update frontend drag-drop allowed transitions",
-      "description": "As a board user, I want drag-and-drop to enforce the new state transitions so manual moves match the agent-driven pipeline.",
+      "title": "Replace merge-failures.json with beads state in the backend",
+      "description": "As the backend, I need to read beads state to determine merge outcome — distinguishing transient failures from genuine blockers — instead of relying on merge-failures.json.",
       "acceptanceCriteria": [
-        "frontend/src/drag-drop.ts: in_test drag targets include 'ready_for_merge' (not 'ready_to_merge')",
-        "ready_to_merge key is removed from drag-drop ALLOWED_TRANSITIONS",
-        "ready_for_merge: ['in_merge', 'blocked'] is present",
-        "in_merge: ['done', 'blocked'] is present",
-        "blocked allowed targets include 'ready_for_merge' and 'in_merge'",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
+        "merger.md no longer instructs the agent to write merge-failures.json; genuine blockers are instead recorded as bead metadata: bd update <id> --metadata '{\"blocker\": true, \"category\": \"...\", \"detail\": \"...\"}'",
+        "backend/app/agent_loop.py has a _read_beads_state(worktree_path: str) -> dict | None function that runs bd list --json in the worktree as a subprocess and returns parsed output, or None if .beads/ does not exist",
+        "In try_pickup_and_run(), after ralph exits for the merger case, the code reads beads state instead of merge-failures.json",
+        "Exit 0 + no open beads -> complete_ticket()",
+        "Exit non-zero + open beads with no blocker metadata -> re-dispatch merger via _schedule_pickup('merger') (transient failure, do not block)",
+        "Any exit + at least one bead with blocker: true in metadata -> fail_ticket() -> ticket goes to blocked",
+        "The stale merge-failures.json cleanup block in agent_loop.py lines 104-118 is removed for the merger case",
+        "Unit tests cover all three outcome branches using a mocked bd list response",
+        "Typecheck passes"
       ],
-      "priority": 3,
-      "passes": true,
+      "priority": 6,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-007",
-      "title": "Update dashboard column labels for new states",
-      "description": "As an operator viewing the dashboard, I want the column labels to show the new state names so the dashboard matches the board.",
+      "title": "Merger resumability in the timeout handler",
+      "description": "As the backend, when the merger agent times out, I need to check whether beads has partial progress and retry rather than always returning the ticket to a manual state.",
       "acceptanceCriteria": [
-        "frontend/src/dashboard.ts COLUMN_LABELS: ready_to_merge entry removed",
-        "COLUMN_LABELS contains ready_for_merge: 'Ready for Merge'",
-        "COLUMN_LABELS contains in_merge: 'In Merge'",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 3,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-008",
-      "title": "Update frontend test fixtures for renamed states",
-      "description": "As a developer, I need test fixtures updated to use the new state names so the TypeScript compile and test suite remain green.",
-      "acceptanceCriteria": [
-        "frontend/src/drag-drop.test.ts: no ready_to_merge references remain",
-        "drag-drop.test.ts asserts ready_for_merge → in_merge transition is allowed",
-        "drag-drop.test.ts asserts in_merge → done transition is allowed",
-        "frontend/src/dashboard.test.ts: ColumnCounts fixtures use ready_for_merge and in_merge fields (not ready_to_merge)",
-        "npm test passes with no skips or warnings",
+        "A merger_resume_count integer column (default 0) is added to the Ticket model in backend/app/models.py and a corresponding DB migration is added to _migrate_schema() in database.py",
+        "In backend/app/routers/agents.py, the merger timeout handler reads beads state from the worktree after a timeout using _read_beads_state()",
+        "If beads shows partial progress (at least one bead closed, at least one open, none with blocker: true) AND merger_resume_count < 3: increment merger_resume_count, call _schedule_pickup('merger'), and leave the ticket in in_merge state",
+        "If beads shows no progress (all beads open) or a genuine blocker bead: run the existing timeout logic (ticket returns to to_do or blocked)",
+        "If .beads/ does not exist in the worktree: fall back to the existing <promise>COMPLETE</promise> log-check behavior unchanged",
+        "If merger_resume_count reaches 3: stop retrying, call fail_ticket() with a note describing how many resume attempts were made and which bead it was stuck on",
+        "Unit tests cover: partial-progress retry, no-progress fallback, blocker fallback, and resume-count cap (3 -> block)",
         "Typecheck passes"
       ],
-      "priority": 4,
-      "passes": true,
+      "priority": 7,
+      "passes": false,
       "notes": ""
     }
   ]
