@@ -28,17 +28,16 @@ class TestCreateWorktree:
     ) -> None:
         """Worktree is created with branch named ticket/{ticket_id}."""
         project_path = str(tmp_path / "myproject")
-        os.makedirs(project_path)
+        os.makedirs(project_path + "/.git")  # skip _ensure_git_repo
         mock_run.side_effect = _mock_git_side_effect
 
         create_worktree(ticket_id=42, project_path=project_path)
 
-        # Should call git worktree add with correct branch name
+        # Find the git worktree add call among all subprocess calls
         calls = mock_run.call_args_list
-        worktree_call = calls[0]
-        args = worktree_call[0][0]
-        assert "worktree" in args
-        assert "add" in args
+        worktree_calls = [c for c in calls if "worktree" in c[0][0] and "add" in c[0][0]]
+        assert len(worktree_calls) == 1, "Expected exactly one 'git worktree add' call"
+        args = worktree_calls[0][0][0]
         assert "-b" in args
         assert "ticket/42" in args
 
@@ -132,9 +131,9 @@ class TestCreateWorktree:
     def test_raises_on_git_failure(
         self, mock_run: mock.MagicMock, tmp_path: Path
     ) -> None:
-        """Raises WorktreeError if git command fails."""
+        """Raises WorktreeError if git worktree add command fails."""
         project_path = str(tmp_path / "myproject")
-        os.makedirs(project_path)
+        os.makedirs(project_path + "/.git")  # skip _ensure_git_repo
         mock_run.return_value = mock.MagicMock(
             returncode=128, stdout="", stderr="fatal: not a git repository"
         )
@@ -146,9 +145,9 @@ class TestCreateWorktree:
     def test_raises_on_subprocess_exception(
         self, mock_run: mock.MagicMock, tmp_path: Path
     ) -> None:
-        """Raises WorktreeError if subprocess raises an exception."""
+        """Raises WorktreeError if subprocess raises an exception during worktree add."""
         project_path = str(tmp_path / "myproject")
-        os.makedirs(project_path)
+        os.makedirs(project_path + "/.git")  # skip _ensure_git_repo
         mock_run.side_effect = subprocess.SubprocessError("git not found")
 
         with pytest.raises(WorktreeError, match="Git error"):

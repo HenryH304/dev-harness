@@ -477,6 +477,7 @@ async def test_unblock_resets_relevant_counter(
         )
     assert resp.status_code == 200
 
+    session.expire(t)  # flush identity map so we read the committed DB state
     result = await session.execute(select(Ticket).where(Ticket.id == tid))
     ticket = result.scalar_one()
     assert getattr(ticket, counter_field) == 0, f"{counter_field} should be reset"

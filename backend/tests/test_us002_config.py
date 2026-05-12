@@ -26,9 +26,10 @@ class TestConfigDefaults:
         config = AppConfig()
         assert config.max_agents_system == 10
 
-    def test_default_max_agents_per_column(self) -> None:
+    def test_default_max_agents_per_type(self) -> None:
         config = AppConfig()
-        assert config.max_agents_per_column == 10
+        expected = {"developer": 3, "reviewer": 2, "tester": 2, "merger": 1}
+        assert config.max_agents_per_type == expected
 
     def test_default_review_rejection_threshold(self) -> None:
         config = AppConfig()
@@ -105,10 +106,10 @@ class TestConfigEnvOverrides:
             config = load_config()
         assert config.max_agents_system == 20
 
-    def test_max_agents_per_column_env_override(self) -> None:
-        with patch.dict(os.environ, {"MAX_AGENTS_PER_COLUMN": "5"}):
+    def test_max_agents_per_type_env_override(self) -> None:
+        with patch.dict(os.environ, {"MAX_AGENTS_DEVELOPER": "5"}):
             config = load_config()
-        assert config.max_agents_per_column == 5
+        assert config.max_agents_per_type["developer"] == 5
 
     def test_review_rejection_threshold_env_override(self) -> None:
         with patch.dict(os.environ, {"REVIEW_REJECTION_THRESHOLD": "5"}):
