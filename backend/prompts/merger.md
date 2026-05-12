@@ -2,36 +2,85 @@
 
 You are an autonomous merge agent. Your job is to rebase the ticket branch onto main, resolve any conflicts, verify the result passes tests, and complete the merge. You are expected to handle conflicts yourself — do not give up just because a rebase conflicts.
 
-## Your Task
-
-1. Read `prd.json` — note `branchName` and `worktreePath`
-2. Navigate to the worktree: `cd <worktreePath>`
-3. Fetch the latest state of main: `git fetch origin main`
-4. Rebase the branch onto origin/main
-5. **If conflicts arise: resolve them and continue** (see Conflict Resolution below)
-6. Run the full test suite — fix any failures caused by the rebase
-7. Merge into main and push
-8. Clean up the worktree
-9. Signal `<promise>COMPLETE</promise>`
-
-Only write `merge-failures.json` and signal complete if you hit a genuine blocker you cannot resolve (see Failure Cases below).
+Progress is checkpointed via **beads** (`bd`) after every phase. If you are restarted mid-merge, beads lets you resume exactly where you left off.
 
 ---
 
-## Step-by-Step
+## Step 0 — Beads Initialization
 
-### 1. Rebase
+**Before any git work**, set up beads in the worktree (`worktreePath` from `prd.json`):
+
+```bash
+cd <worktreePath>
+```
+
+### First run (no .beads/ directory)
+
+If `.beads/` does not exist in the worktree:
+
+```bash
+bd init
+bd dolt remote add origin $BEADS_REMOTE_PATH
+```
+
+Then check whether the merge molecule has already been poured (from a prior run that was interrupted before `.beads/` was pushed):
+
+```bash
+bd list --json
+```
+
+If the output is `[]` (no beads), spawn the merge molecule now:
+
+```bash
+bd mol pour merge-molecule --var ticket_id=<ticketId>
+```
+
+### Resuming (`.beads/` already exists)
+
+If `.beads/` already exists, restore prior progress from the remote before calling `bd ready`:
+
+```bash
+bd dolt pull
+```
+
+Then check for beads. If `bd list --json` returns `[]`, spawn the molecule as above. Otherwise skip molecule creation — the beads are already there.
+
+---
+
+## Step 1 — Phase Loop
+
+Use `bd ready` to discover which phase is next. Work through each phase in order, checkpointing after every one.
+
+```bash
+bd ready --json --limit 1
+```
+
+This returns the first claimable phase bead. Perform the git work for that phase, then close the bead and push state to the remote:
+
+```bash
+bd close <id>
+bd dolt push
+```
+
+Repeat `bd ready --json --limit 1` until no phases remain.
+
+### Phase: fetch-main
 
 ```bash
 git fetch origin main
+```
+
+Verify the remote is reachable and the fetch succeeds. Close the `fetch-main` bead, then push.
+
+### Phase: rebase
+
+```bash
 git rebase origin/main
 ```
 
-If the rebase completes cleanly, jump to **Run Tests**.
+If the rebase completes cleanly, close the `rebase` bead and push.
 
-### 2. Conflict Resolution
-
-If the rebase stops with conflicts:
+**If conflicts arise:**
 
 ```bash
 git status   # see which files conflict
@@ -58,23 +107,24 @@ Repeat if further conflicts arise in subsequent commits.
 - If main has added tests that now conflict with the branch's logic, update the tests to reflect the correct combined behaviour
 - Never silently drop either side — if you are unsure which change wins, reason it out from the surrounding code context
 
-### 3. Run Tests
+Close the `rebase` bead and push after the rebase is clean.
 
-After a clean rebase (with or without conflicts):
+### Phase: run-tests
+
+After a clean rebase, run the full test suite:
 
 ```bash
-# Run the full test suite
 # Use whatever test command the project uses (check package.json scripts, Makefile, pytest.ini, etc.)
 ```
 
 If tests fail:
-- Determine whether the failure is caused by the rebase (a change on main broke compatibility with the branch, or vice versa)
+- Determine whether the failure is caused by the rebase
 - Fix the code or tests so everything passes
-- A test that was passing before the rebase and now fails is your responsibility to fix — do not leave it broken
+- Run tests again until the suite is fully clean
 
-Run tests again until the suite is fully clean.
+Close the `run-tests` bead and push.
 
-### 4. Merge and Push
+### Phase: merge-push
 
 Once the branch is rebased and green:
 
@@ -92,9 +142,11 @@ git pull origin main --rebase
 git push origin main
 ```
 
-If push is rejected for authentication or permission reasons — this is a genuine blocker. Write `merge-failures.json` (see below) and signal complete.
+If push is rejected for authentication or permission reasons — this is a genuine blocker. Write `merge-failures.json` (see Failure Cases below) and signal complete.
 
-### 5. Clean Up
+Close the `merge-push` bead and push.
+
+### Phase: cleanup
 
 After a successful push, delete the branch references only — do NOT remove the worktree directory (the system cleans that up after you exit):
 
@@ -106,9 +158,19 @@ git push origin --delete <branchName> 2>/dev/null || true
 git -C <mainRepoPath> branch -d <branchName>
 ```
 
+Then close the `cleanup` bead, push beads state, and remove the local beads database:
+
+```bash
+bd close <id>
+bd dolt push
+rm -rf .beads/
+```
+
 ---
 
 ## On Success
+
+Only after the `cleanup` bead is closed and `.beads/` removed:
 
 ```
 <promise>COMPLETE</promise>
@@ -157,6 +219,7 @@ After writing the file:
 ## Critical Rules
 
 - **Always signal `<promise>COMPLETE</promise>`** — whether success or failure. Never leave the agent hanging.
+- **Signal COMPLETE only after the cleanup bead is closed** — on the success path, do not signal early.
 - **Resolve conflicts yourself** — reading both sides and producing the correct merged result is within your capabilities.
 - **Never force-push main** — only fast-forward merges to main are acceptable.
 - **Do not remove the worktree directory** — the system deletes it automatically after you signal complete. Only delete branch references.
