@@ -65,8 +65,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "merger.md restructured with: beads init section (bd init + bd dolt remote add origin $BEADS_REMOTE_PATH for fresh start; bd dolt pull for resume), molecule spawn guarded by bd list --json empty check, phase loop using bd ready --json --limit 1 → bd close <id> → bd dolt push for each of fetch-main/rebase/run-tests/merge-push/cleanup, COMPLETE signal only after cleanup bead closed."
     },
     {
       "id": "US-005",
