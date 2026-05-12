@@ -28,16 +28,16 @@ _INSERT = (
     "INSERT INTO tickets "
     "(project, title, description, priority, state, acceptance_criteria, "
     " agent_attempts, developer_timeouts, reviewer_timeouts, tester_timeouts, "
-    " merger_timeouts, developer_failure_count, review_rejection_count, tester_rejection_count) "
-    "VALUES ('p', '{title}', 'd', 1, '{state}', '[]', 0, 0, 0, 0, 0, 0, 0, 0)"
+    " merger_timeouts, merger_resume_count, developer_failure_count, review_rejection_count, tester_rejection_count) "
+    "VALUES ('p', '{title}', 'd', 1, '{state}', '[]', 0, 0, 0, 0, 0, 0, 0, 0, 0)"
 )
 
 _INSERT_WITH_PREV = (
     "INSERT INTO tickets "
     "(project, title, description, priority, state, previous_state, acceptance_criteria, "
     " agent_attempts, developer_timeouts, reviewer_timeouts, tester_timeouts, "
-    " merger_timeouts, developer_failure_count, review_rejection_count, tester_rejection_count) "
-    "VALUES ('p', '{title}', 'd', 1, '{state}', '{prev}', '[]', 0, 0, 0, 0, 0, 0, 0, 0)"
+    " merger_timeouts, merger_resume_count, developer_failure_count, review_rejection_count, tester_rejection_count) "
+    "VALUES ('p', '{title}', 'd', 1, '{state}', '{prev}', '[]', 0, 0, 0, 0, 0, 0, 0, 0, 0)"
 )
 
 

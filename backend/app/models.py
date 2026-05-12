@@ -31,6 +31,7 @@ class Ticket(Base):
     reviewer_timeouts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tester_timeouts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     merger_timeouts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    merger_resume_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     developer_failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     review_rejection_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tester_rejection_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

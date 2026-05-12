@@ -35,6 +35,7 @@ async def _migrate_schema(conn: Any) -> None:
         ("tester_rejection_count", "INTEGER NOT NULL DEFAULT 0"),
         ("developer_failure_count", "INTEGER NOT NULL DEFAULT 0"),
         ("previous_state", "VARCHAR(50)"),
+        ("merger_resume_count", "INTEGER NOT NULL DEFAULT 0"),
     ]
     for col, definition in ticket_migrations:
         if col not in existing:

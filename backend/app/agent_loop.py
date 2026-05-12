@@ -58,6 +58,83 @@ def _read_beads_state(worktree_path: str) -> dict[str, Any] | None:
         return None
 
 
+def _get_beads_timeout_info(worktree_path: str) -> dict[str, Any] | None:
+    """Return beads progress info for the timeout handler.
+
+    Returns None if .beads/ does not exist.
+    Returns a dict with:
+      open_beads  - list of open (unclosed) beads
+      total_count - total bead count (open + closed)
+      has_partial_progress - True if some closed, some open, no blockers
+      has_blocker - True if any open bead has blocker:true in metadata
+    """
+    beads_dir = Path(worktree_path) / ".beads"
+    if not beads_dir.exists():
+        return None
+    try:
+        open_result = subprocess.run(
+            ["bd", "list", "--json"],
+            capture_output=True,
+            text=True,
+            cwd=worktree_path,
+        )
+        if open_result.returncode != 0:
+            return None
+        open_beads: list[dict[str, Any]] = json.loads(open_result.stdout)
+
+        total_count = len(open_beads)
+        all_result = subprocess.run(
+            ["bd", "list", "--json", "--all"],
+            capture_output=True,
+            text=True,
+            cwd=worktree_path,
+        )
+        if all_result.returncode == 0:
+            try:
+                total_count = len(json.loads(all_result.stdout))
+            except Exception:
+                pass
+
+        has_blocker = any(
+            isinstance(b.get("metadata"), dict) and b["metadata"].get("blocker")
+            for b in open_beads
+        )
+        closed_count = total_count - len(open_beads)
+        has_partial_progress = len(open_beads) > 0 and closed_count > 0 and not has_blocker
+
+        return {
+            "open_beads": open_beads,
+            "total_count": total_count,
+            "has_partial_progress": has_partial_progress,
+            "has_blocker": has_blocker,
+        }
+    except Exception:
+        return None
+
+
+def _classify_merger_timeout(
+    merger_resume_count: int, beads_info: dict[str, Any] | None
+) -> str:
+    """Classify the timeout outcome for the merger agent.
+
+    Returns one of:
+      "resume"       - partial progress, can retry (merger_resume_count < 3)
+      "cap_exceeded" - partial progress but resume_count >= 3 → block
+      "no_progress"  - all beads open → existing timeout logic
+      "blocker"      - genuine blocker bead → existing timeout logic
+      "no_beads"     - .beads/ not found → existing timeout logic
+    """
+    if beads_info is None:
+        return "no_beads"
+    if beads_info["has_blocker"]:
+        return "blocker"
+    if not beads_info["has_partial_progress"]:
+        return "no_progress"
+    if merger_resume_count < 3:
+        return "resume"
+    return "cap_exceeded"
+
+
 def _classify_merger_outcome(
     exit_code: int, beads_state: dict[str, Any] | None
 ) -> tuple[str, list[dict[str, Any]]]:

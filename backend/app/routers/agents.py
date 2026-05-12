@@ -679,6 +679,92 @@ async def check_agent_timeouts(
                 # next_state still None — unknown state; fall through to release via
                 # the timeout path below so the agent is not left permanently stuck.
 
+            # Merger resumability: check beads state before falling back to timeout.
+            if agent_entry.agent_type == "merger" and ticket.worktree_path:
+                from app.agent_loop import (
+                    _classify_merger_timeout,
+                    _get_beads_timeout_info,
+                    _schedule_pickup,
+                )
+
+                beads_info = _get_beads_timeout_info(ticket.worktree_path)
+                timeout_class = _classify_merger_timeout(ticket.merger_resume_count, beads_info)
+
+                if timeout_class == "resume":
+                    ticket.merger_resume_count += 1
+                    stuck_bead = (
+                        beads_info["open_beads"][0].get("title", "unknown")
+                        if beads_info and beads_info["open_beads"]
+                        else "unknown"
+                    )
+                    ticket.current_agent = None
+                    ticket.assigned_at = None
+                    agent_entry.status = "available"
+                    agent_entry.current_ticket_id = None
+                    await session.commit()
+                    logger.info(
+                        "Merger resume %d for ticket %d — stuck on '%s', re-dispatching",
+                        ticket.merger_resume_count,
+                        ticket.id,
+                        stuck_bead,
+                    )
+                    await publish_event(
+                        "ticket:events",
+                        {
+                            "event_type": "merger_resume_dispatched",
+                            "ticket_id": ticket.id,
+                            "agent_id": agent_id,
+                            "merger_resume_count": ticket.merger_resume_count,
+                            "stuck_bead": stuck_bead,
+                            "timestamp": now.isoformat(),
+                        },
+                    )
+                    _schedule_pickup("merger")
+                    continue
+
+                if timeout_class == "cap_exceeded":
+                    stuck_bead = (
+                        beads_info["open_beads"][0].get("title", "unknown")
+                        if beads_info and beads_info["open_beads"]
+                        else "unknown"
+                    )
+                    note_content = (
+                        f"Merger failed after {ticket.merger_resume_count} resume "
+                        f"attempts. Stuck on bead: {stuck_bead}. "
+                        "Manual intervention required."
+                    )
+                    note = Note(
+                        ticket_id=ticket.id,
+                        author="system",
+                        content=note_content,
+                        note_type="failure",
+                    )
+                    session.add(note)
+                    ticket.state = "blocked"
+                    ticket.previous_state = previous_state
+                    ticket.current_agent = None
+                    ticket.assigned_at = None
+                    agent_entry.status = "available"
+                    agent_entry.current_ticket_id = None
+                    await session.commit()
+                    logger.info(
+                        "Merger resume cap exceeded for ticket %d — blocking",
+                        ticket.id,
+                    )
+                    await publish_event(
+                        "ticket:events",
+                        {
+                            "event_type": "ticket_blocked",
+                            "ticket_id": ticket.id,
+                            "agent_id": agent_id,
+                            "reason": "merger resume count exhausted",
+                            "timestamp": now.isoformat(),
+                        },
+                    )
+                    continue
+
+                # "no_progress", "blocker", "no_beads" → fall through to existing logic
+
             # Ralph never ran or failed — increment counter and return/block.
 
             # Increment the correct timeout counter
