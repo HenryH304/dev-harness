@@ -74,3 +74,14 @@ Started: Tue, 12 May 2026 14:42:07 BST
   - When test filtering bd list JSON for child beads, the `parent-child` dep type appears on both parent and child objects; filter by bead title (e.g., "resolve-conflict" in title) to reliably target only the created children.
   - The integration test `test_child_beads_block_run_tests_until_closed` confirms that closing all children then parent then running bd ready correctly surfaces run-tests as the next bead.
 ---
+
+## 2026-05-12 - US-006
+- What was implemented: Added `_read_beads_state(worktree_path) -> dict | None` (runs `bd list --json`, returns `{"beads": [...]}` or None if .beads/ absent); added `_classify_merger_outcome(exit_code, beads_state) -> (str, list)` returning "complete"/"retry"/"fail"/"no_beads"; replaced merge-failures.json reading for merger case in try_pickup_and_run() with three-branch beads logic; removed "merger" from stale_files cleanup dict; updated merger.md to use `bd update <id> --metadata '{"blocker": true, ...}'` instead of writing merge-failures.json.
+- Files changed: backend/app/agent_loop.py (helpers + merger outcome logic), backend/prompts/merger.md (Failure Cases → Blocker Handling section), backend/tests/test_beads_us006_beads_state.py (new, 20 tests), prd.json (US-006 passes: true)
+- **Patterns added to Codebase Patterns:** None - no new patterns discovered (subprocess run for bd list, Path('.beads').exists() check, and beads metadata structure were all consistent with patterns already established)
+- **Learnings for future iterations:**
+  - `_classify_merger_outcome` is importable from `app.agent_loop` and is the clean unit-testable entry point for beads-outcome-branch tests
+  - The re-dispatch ("retry") path manually resets ticket state to ready_for_merge and releases the AgentRegistry entry inline (no separate API endpoint); mirrors how check_agent_timeouts handles the same pattern
+  - Test isolation: the full test suite has a pre-existing flaky websocket test (`test_websocket_endpoint_connects` in test_us027) that fails on connection-count ordering when run in sequence but passes in isolation — not related to beads work
+  - Run tests with `.venv/bin/pytest` (SQLAlchemy 2.0.36 in venv), not system python3 (SQLAlchemy 1.4.50)
+---

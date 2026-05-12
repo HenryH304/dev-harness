@@ -101,8 +101,8 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "_read_beads_state() runs bd list --json; returns {'beads': [...]} or None if .beads/ absent. _classify_merger_outcome() returns 'complete'/'retry'/'fail'/'no_beads'. merger.md uses bd update --metadata for genuine blockers instead of writing merge-failures.json. merge-failures.json removed from stale-file cleanup dict."
     },
     {
       "id": "US-007",
