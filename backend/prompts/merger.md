@@ -78,28 +78,41 @@ Verify the remote is reachable and the fetch succeeds. Close the `fetch-main` be
 git rebase origin/main
 ```
 
-If the rebase completes cleanly, close the `rebase` bead and push.
+If the rebase completes cleanly (no conflicts), close the `rebase` bead and push. If no conflicts occur, skip directly to closing the rebase bead — do not create any conflict sub-beads.
 
 **If conflicts arise:**
 
 ```bash
-git status   # see which files conflict
+git status --short   # identify conflicted files (UU prefix = unmerged paths)
 ```
 
-For each conflicting file:
-- Read both sides of the conflict (`<<<<<<<`, `=======`, `>>>>>>>` markers)
-- Understand what the branch changed and what main changed
-- Produce a correct merged result that preserves both sets of intentions
-- Edit the file to remove all conflict markers
-- `git add <file>`
+The `REBASE_BEAD_ID` is the `id` field from the `bd ready --json --limit 1` output that returned the rebase bead.
 
-Once all conflicts are resolved:
+For each conflicted file, create a child bead, resolve the conflict, checkpoint:
+
+```bash
+# Repeat for each conflicted <filename> from git status --short:
+bd create resolve-conflict:<filename> --parent <REBASE_BEAD_ID>
+# Note the new bead id returned (or use bd list --json to find it)
+
+# Resolve the conflict in <filename>:
+# - Read both sides of the conflict (<<<<<<<, =======, >>>>>>> markers)
+# - Understand what the branch changed and what main changed
+# - Produce a correct merged result that preserves both sets of intentions
+# - Edit the file to remove all conflict markers
+git add <filename>
+
+bd close <conflict-bead-id>
+bd dolt push
+```
+
+Once all conflicted files are resolved and each has its bead closed:
 
 ```bash
 git rebase --continue
 ```
 
-Repeat if further conflicts arise in subsequent commits.
+Repeat the entire conflict-detection-and-checkpoint loop if further conflicts arise in subsequent commits.
 
 **Guiding principles for conflict resolution:**
 - The branch's new feature work takes priority within its own domain
@@ -107,7 +120,7 @@ Repeat if further conflicts arise in subsequent commits.
 - If main has added tests that now conflict with the branch's logic, update the tests to reflect the correct combined behaviour
 - Never silently drop either side — if you are unsure which change wins, reason it out from the surrounding code context
 
-Close the `rebase` bead and push after the rebase is clean.
+Close the `rebase` bead and push after the rebase is clean (all commits rebased, all conflict sub-beads closed).
 
 ### Phase: run-tests
 
