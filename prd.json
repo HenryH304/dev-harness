@@ -82,8 +82,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "merger.md rebase section updated: git status --short to identify conflicted files; bd create resolve-conflict:<filename> --parent <REBASE_BEAD_ID> per file; bd close <conflict-bead-id> + bd dolt push per file before git rebase --continue; cleanup section already had bd dolt push then rm -rf .beads/ in correct order."
     },
     {
       "id": "US-006",

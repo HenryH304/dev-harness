@@ -17,6 +17,8 @@ Started: Tue, 12 May 2026 14:42:07 BST
 - SQLAlchemy identity map + `expire_on_commit=False`: when a test session creates an object, commits it, then an HTTP call (different session) mutates it, the test session returns the stale cached object unless you call `session.expire(obj)` before re-querying
 - `_ensure_git_repo` in worktree.py runs git init BEFORE the `try/except SubprocessError` block — tests that mock subprocess.run must pre-create `.git/` in the tmp dir to skip it (otherwise the first captured call is `git init`, not `git worktree add`)
 - AppConfig uses `max_agents_per_type` (dict, per-agent) not `max_agents_per_column` (removed scalar)
+- `bd create <title> --parent <parent-id>` creates a child bead; parent cannot be closed until all children are closed (bd enforces this — use `--force` to override, but don't)
+- When filtering bd list output for child beads, filter by title (e.g., "resolve-conflict" in title) rather than dependency type — the `parent-child` dep type appears on BOTH parent and child objects, so filtering by it catches the parent too
 
 ---
 
@@ -61,4 +63,14 @@ Started: Tue, 12 May 2026 14:42:07 BST
   - `bd ready --json --limit 1` returns a JSON array of claimable beads; subsequent phases are gated by bead dependencies and only appear in bd ready after their blockers are closed
   - `bd ready` has `--claim` flag for atomic claim-and-lock; for the merger agent prompt `--json --limit 1` is sufficient since the agent runs serially
   - The test `rfind("keyword")` trick for ordering checks can backfire when the keyword appears in multiple sections; use `find` (first occurrence) for simpler ordering assertions
+---
+
+## 2026-05-12 - US-005
+- What was implemented: Updated merger.md rebase section with per-file conflict sub-bead instructions: git status --short to identify conflicted files, bd create resolve-conflict:<filename> --parent <REBASE_BEAD_ID> per file, bd close <conflict-bead-id> + bd dolt push per file before git rebase --continue. Cleanup section was already correct (bd dolt push then rm -rf .beads/).
+- Files changed: backend/prompts/merger.md (rebase phase section restructured), backend/tests/test_beads_us005_conflict_beads.py (new, 15 tests), prd.json (US-005 passes: true)
+- **Patterns added to Codebase Patterns:** 2 new patterns (bd create --parent enforcement; filter by title not dep type when finding child beads)
+- **Learnings for future iterations:**
+  - `bd close <parent>` is blocked by open children — bd prints "blocked by open issues [...] (use --force to override)". Must close children first.
+  - When test filtering bd list JSON for child beads, the `parent-child` dep type appears on both parent and child objects; filter by bead title (e.g., "resolve-conflict" in title) to reliably target only the created children.
+  - The integration test `test_child_beads_block_run_tests_until_closed` confirms that closing all children then parent then running bd ready correctly surfaces run-tests as the next bead.
 ---
