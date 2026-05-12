@@ -35,8 +35,14 @@ install_beads() {
         curl -fsSL https://raw.githubusercontent.com/gastownhall/beads/main/scripts/install.sh | bash
         return
     fi
-    # CGO_ENABLED=0 for a server-mode build — no C compiler required
-    CGO_ENABLED=0 go install github.com/steveyegge/beads/cmd/bd@latest
+    # Build with CGO enabled so bd uses embedded Dolt mode (no external server needed).
+    # Requires gcc; falls back to CGO_ENABLED=0 (server mode only) if not available.
+    if command -v gcc &>/dev/null; then
+        go install github.com/steveyegge/beads/cmd/bd@latest
+    else
+        warn "gcc not found; installing bd with CGO_ENABLED=0 (server mode only — bd init --server required)"
+        CGO_ENABLED=0 go install github.com/steveyegge/beads/cmd/bd@latest
+    fi
     # Ensure bd is on PATH (go/bin may not be in PATH)
     if [ -f "$HOME/go/bin/bd" ] && ! command -v bd &>/dev/null; then
         mkdir -p "$HOME/.local/bin"

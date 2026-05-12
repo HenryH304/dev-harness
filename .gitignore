@@ -14,3 +14,4 @@ nohup.out
 *.db
 backend/.venv/
 .venv/
+.beads-remote/

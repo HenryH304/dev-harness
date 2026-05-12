@@ -31,8 +31,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "BEADS_REMOTE_PATH stored as file:// URL. Script uses dolt init to create the remote. CGO build of bd required for embedded Dolt mode (updated install-deps.sh). Idempotent: checks for .dolt directory before re-running dolt init."
     },
     {
       "id": "US-003",
