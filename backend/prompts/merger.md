@@ -155,7 +155,7 @@ git pull origin main --rebase
 git push origin main
 ```
 
-If push is rejected for authentication or permission reasons — this is a genuine blocker. Write `merge-failures.json` (see Failure Cases below) and signal complete.
+If push is rejected for authentication or permission reasons — this is a genuine blocker. Record it as bead metadata and signal complete (see Blocker Handling below).
 
 Close the `merge-push` bead and push.
 
@@ -191,37 +191,28 @@ Only after the `cleanup` bead is closed and `.beads/` removed:
 
 ---
 
-## Failure Cases
+## Blocker Handling
 
-> **Important:** writing `merge-failures.json` moves the ticket to **blocked** and requires human intervention. Exhaust every option before giving up.
+> **Important:** recording a blocker moves the ticket to **blocked** and requires human intervention. Exhaust every option before giving up.
 
-Only write `merge-failures.json` for blockers you genuinely cannot resolve:
+Only record a blocker for things you genuinely cannot resolve:
 
 - Remote push rejected due to authentication or permissions
 - A conflict that requires a product decision (e.g. two features changed the same business logic in incompatible ways and you cannot determine which is correct from context alone)
 - The test suite has a pre-existing failure unrelated to this branch that blocks the suite entirely
 
-**Do not** write a failure file for:
+**Do not** record a blocker for:
 - Merge conflicts (resolve them)
 - Test failures caused by the rebase (fix them)
 - Non-fast-forward rejections (retry after pulling)
 
-Write `merge-failures.json` to the current directory, then signal complete:
+When you hit a genuine blocker, record it on the relevant bead using `bd update`:
 
-```json
-{
-  "summary": "One-sentence description of the blocker",
-  "rework_note": "What happened, what was tried, and why you could not proceed. Be specific.",
-  "issues": [
-    {
-      "category": "push_failure | unresolvable_conflict | test_suite_broken",
-      "detail": "Exact error message or description of the problem"
-    }
-  ]
-}
+```bash
+bd update <bead-id> --metadata '{"blocker": true, "category": "push_failure | unresolvable_conflict | test_suite_broken", "detail": "Exact error message or description of the problem"}'
 ```
 
-After writing the file:
+Then signal complete:
 
 ```
 <promise>COMPLETE</promise>
