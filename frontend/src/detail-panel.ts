@@ -1,4 +1,4 @@
-import { apiGet } from './api.js';
+import { apiGet, apiPatch } from './api.js';
 
 export interface Note {
   id: number;
@@ -158,12 +158,36 @@ export function renderDetailPanel(
   // Description
   const descSection = document.createElement('div');
   descSection.className = 'detail-section';
+  const descHeaderRow = document.createElement('div');
+  descHeaderRow.className = 'detail-section-header-row';
   const descHeader = document.createElement('h3');
   descHeader.textContent = 'Description';
-  descSection.appendChild(descHeader);
-  const descBody = document.createElement('div');
+  descHeaderRow.appendChild(descHeader);
+  const descSaveBtn = document.createElement('button');
+  descSaveBtn.className = 'detail-save-btn';
+  descSaveBtn.textContent = 'Save';
+  descSaveBtn.disabled = true;
+  descHeaderRow.appendChild(descSaveBtn);
+  descSection.appendChild(descHeaderRow);
+  const descBody = document.createElement('textarea');
   descBody.className = 'detail-description';
-  descBody.textContent = ticket.description;
+  descBody.value = ticket.description;
+  descBody.rows = 6;
+  descBody.addEventListener('input', () => {
+    descSaveBtn.disabled = descBody.value === ticket.description;
+  });
+  descSaveBtn.addEventListener('click', async () => {
+    descSaveBtn.disabled = true;
+    descSaveBtn.textContent = 'Saving…';
+    const res = await apiPatch(`/tickets/${ticket.id}`, { description: descBody.value });
+    if (res.ok) {
+      ticket.description = descBody.value;
+      descSaveBtn.textContent = 'Saved';
+    } else {
+      descSaveBtn.textContent = 'Save';
+      descSaveBtn.disabled = false;
+    }
+  });
   descSection.appendChild(descBody);
   panel.appendChild(descSection);
 

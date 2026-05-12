@@ -440,3 +440,75 @@ async def test_transition_same_state(
             json={"new_state": "to_do", "agent_id": "agent-1"},
         )
     assert resp.status_code == 400
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("blocked_from,counter_field,other_fields", [
+    ("in_progress", "developer_failure_count", ["review_rejection_count", "tester_rejection_count"]),
+    ("to_do",       "developer_failure_count", ["review_rejection_count", "tester_rejection_count"]),
+    ("in_review",   "review_rejection_count",  ["developer_failure_count", "tester_rejection_count"]),
+    ("ready_for_review", "review_rejection_count", ["developer_failure_count", "tester_rejection_count"]),
+    ("in_test",     "tester_rejection_count",  ["developer_failure_count", "review_rejection_count"]),
+    ("ready_for_test",   "tester_rejection_count",  ["developer_failure_count", "review_rejection_count"]),
+])
+async def test_unblock_resets_relevant_counter(
+    client: AsyncClient, session: AsyncSession,
+    blocked_from: str, counter_field: str, other_fields: list[str],
+) -> None:
+    """Transitioning out of blocked resets the counter for the stage that caused the block."""
+    from app.models import Ticket
+    from sqlalchemy import select
+
+    # Create ticket with non-zero failure counters directly in DB
+    t = Ticket(
+        project="test-project", title="Counter reset test",
+        description="desc", acceptance_criteria=[], priority=1,
+        state="blocked", previous_state=blocked_from,
+        developer_failure_count=3, review_rejection_count=2, tester_rejection_count=1,
+    )
+    session.add(t)
+    await session.commit()
+    tid = t.id
+
+    with patch("app.routers.transitions.publish_event", new_callable=AsyncMock):
+        resp = await client.post(
+            f"/api/tickets/{tid}/transition",
+            json={"new_state": "to_do", "manual_override": True},
+        )
+    assert resp.status_code == 200
+
+    result = await session.execute(select(Ticket).where(Ticket.id == tid))
+    ticket = result.scalar_one()
+    assert getattr(ticket, counter_field) == 0, f"{counter_field} should be reset"
+    for f in other_fields:
+        assert getattr(ticket, f) > 0, f"{f} should not be reset"
+
+
+@pytest.mark.anyio
+async def test_non_blocked_transition_does_not_reset_counters(
+    client: AsyncClient, session: AsyncSession,
+) -> None:
+    """Transitioning between non-blocked states leaves counters untouched."""
+    from app.models import Ticket
+    from sqlalchemy import select
+
+    t = Ticket(
+        project="test-project", title="No reset test",
+        description="desc", acceptance_criteria=[], priority=1,
+        state="to_do", developer_failure_count=2, review_rejection_count=1,
+    )
+    session.add(t)
+    await session.commit()
+    tid = t.id
+
+    with patch("app.routers.transitions.publish_event", new_callable=AsyncMock):
+        resp = await client.post(
+            f"/api/tickets/{tid}/transition",
+            json={"new_state": "in_progress"},
+        )
+    assert resp.status_code == 200
+
+    result = await session.execute(select(Ticket).where(Ticket.id == tid))
+    ticket = result.scalar_one()
+    assert ticket.developer_failure_count == 2
+    assert ticket.review_rejection_count == 1

@@ -123,6 +123,17 @@ async def transition_ticket(
     # Perform the transition
     ticket.state = transition.new_state
 
+    # Reset failure counters when a human manually unblocks a ticket so agents
+    # get a fresh set of retries rather than immediately re-blocking.
+    if previous_state == "blocked":
+        blocked_from = ticket.previous_state or ""
+        if blocked_from in ("in_progress", "to_do"):
+            ticket.developer_failure_count = 0
+        elif blocked_from in ("in_review", "ready_for_review"):
+            ticket.review_rejection_count = 0
+        elif blocked_from in ("in_test", "ready_for_test"):
+            ticket.tester_rejection_count = 0
+
     # Auto-generate note
     if transition.new_state == "blocked":
         note_content = f"Ticket blocked (was: '{previous_state}')"

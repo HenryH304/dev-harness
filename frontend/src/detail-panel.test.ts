@@ -8,6 +8,7 @@ import {
   formatNotes,
   formatDependencies,
 } from './detail-panel.js';
+import * as apiModule from './api.js';
 import type { TicketDetail, Note, DependencyList } from './detail-panel.js';
 
 function makeTicketDetail(overrides: Partial<TicketDetail> = {}): TicketDetail {
@@ -93,9 +94,37 @@ describe('renderDetailPanel', () => {
     expect(panel.querySelector('.detail-title')?.textContent).toBe(
       'Test Ticket'
     );
-    expect(panel.querySelector('.detail-description')?.textContent).toContain(
-      'A test ticket description'
-    );
+    const desc = panel.querySelector<HTMLTextAreaElement>('.detail-description');
+    expect(desc?.tagName).toBe('TEXTAREA');
+    expect(desc?.value).toContain('A test ticket description');
+  });
+
+  it('save button is disabled until description changes', () => {
+    const ticket = makeTicketDetail();
+    const panel = renderDetailPanel(ticket, null);
+    const saveBtn = panel.querySelector<HTMLButtonElement>('.detail-save-btn');
+    expect(saveBtn?.disabled).toBe(true);
+    const desc = panel.querySelector<HTMLTextAreaElement>('.detail-description')!;
+    desc.value = 'changed';
+    desc.dispatchEvent(new Event('input'));
+    expect(saveBtn?.disabled).toBe(false);
+  });
+
+  it('save button calls apiPatch and disables itself on success', async () => {
+    const ticket = makeTicketDetail();
+    const panel = renderDetailPanel(ticket, null);
+    const saveBtn = panel.querySelector<HTMLButtonElement>('.detail-save-btn')!;
+    const desc = panel.querySelector<HTMLTextAreaElement>('.detail-description')!;
+
+    vi.spyOn(apiModule, 'apiPatch').mockResolvedValue({ ok: true, status: 200, data: {} } as apiModule.ApiResponse<unknown>);
+
+    desc.value = 'updated description';
+    desc.dispatchEvent(new Event('input'));
+    await saveBtn.click();
+    await new Promise(r => setTimeout(r, 0)); // flush microtasks
+
+    expect(apiModule.apiPatch).toHaveBeenCalledWith('/tickets/1', { description: 'updated description' });
+    expect(saveBtn.textContent).toBe('Saved');
   });
 
   it('renders acceptance criteria as checkboxes', () => {
