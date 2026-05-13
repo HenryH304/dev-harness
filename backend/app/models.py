@@ -39,7 +39,8 @@ class Ticket(Base):
         DateTime, nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime, nullable=False, server_default=func.now(),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
     )
 
 
@@ -97,7 +98,8 @@ class Setting(Base):
     key: Mapped[str] = mapped_column(String(255), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime, nullable=False, server_default=func.now(),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
     )
 
 

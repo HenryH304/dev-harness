@@ -14,13 +14,35 @@ Progress is checkpointed via **beads** (`bd`) after every phase. If you are rest
 cd <worktreePath>
 ```
 
-### First run (no .beads/ directory)
+### Derive the beads remote path for this project
+
+The beads remote lives inside the tracked project — not dev-harness. Derive it from the worktree's git context:
+
+```bash
+MAIN_REPO=$(git rev-parse --absolute-git-dir | sed 's|/\.git.*||')
+BEADS_REMOTE="file://${MAIN_REPO}/.beads-remote"
+```
+
+`--absolute-git-dir` always returns an absolute path and works correctly from both the main repo and any worktree. The `sed` strips `/.git` and anything after it (e.g. `/worktrees/<name>` in worktrees), leaving the project root.
+
+### Initialize the remote if this project has never used beads
+
+```bash
+if [ ! -d "${MAIN_REPO}/.beads-remote/.dolt" ]; then
+    mkdir -p "${MAIN_REPO}/.beads-remote"
+    ( cd "${MAIN_REPO}/.beads-remote" && dolt init )
+fi
+```
+
+This is idempotent — the check means it only runs once per project, ever.
+
+### First run (no .beads/ directory in the worktree)
 
 If `.beads/` does not exist in the worktree:
 
 ```bash
 bd init
-bd dolt remote add origin $BEADS_REMOTE_PATH
+bd dolt remote add origin "$BEADS_REMOTE"
 ```
 
 Then check whether the merge molecule has already been poured (from a prior run that was interrupted before `.beads/` was pushed):

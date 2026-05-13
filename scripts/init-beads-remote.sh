@@ -1,30 +1,28 @@
 #!/usr/bin/env bash
-# Initialize the shared local Dolt remote for beads.
-# All worktrees in this project point here to share beads state.
+# Manually pre-initialize the beads Dolt remote for a tracked project.
 #
-# Usage:   bash scripts/init-beads-remote.sh
-# Env var: BEADS_REMOTE_PATH   file:// URL of the remote (default: file://<project-root>/.beads-remote)
+# The merger agent does this automatically on first run, so you only need
+# this script if you want to set the remote up before any merge happens.
 #
+# Usage:   bash scripts/init-beads-remote.sh <path-to-tracked-project>
+# Example: bash scripts/init-beads-remote.sh ~/Projects/my-app
+#
+# Creates <project>/.beads-remote/ as a local Dolt repo.
 # Idempotent: safe to run multiple times.
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <path-to-tracked-project>" >&2
+    echo "Example: $0 ~/Projects/my-app" >&2
+    exit 1
+fi
 
-# Allow callers to pass a file:// URL; default to <project-root>/.beads-remote
-BEADS_REMOTE_PATH="${BEADS_REMOTE_PATH:-file://${PROJECT_ROOT}/.beads-remote}"
+PROJECT_PATH="$(cd "$1" && pwd)"
+REMOTE_DIR="${PROJECT_PATH}/.beads-remote"
+BEADS_REMOTE="file://${REMOTE_DIR}"
 
 info() { echo "[init-beads-remote] $*"; }
-
-# Strip file:// prefix to get the bare filesystem path
-if [[ "$BEADS_REMOTE_PATH" == file://* ]]; then
-    REMOTE_DIR="${BEADS_REMOTE_PATH#file://}"
-else
-    # Bare path passed — treat as-is (not a valid bd remote URL, but accept for compat)
-    REMOTE_DIR="$BEADS_REMOTE_PATH"
-    BEADS_REMOTE_PATH="file://${REMOTE_DIR}"
-fi
 
 # ── Ensure dolt user identity is configured ──────────────────────────────────
 ensure_dolt_identity() {
@@ -33,17 +31,10 @@ ensure_dolt_identity() {
     if [ -n "$current_email" ]; then
         return
     fi
-    # Try to read from the project .env
-    local env_file="$PROJECT_ROOT/.env"
-    local author_email="dev@beads.local"
-    local author_name="Dev"
-    if [ -f "$env_file" ]; then
-        local val
-        val=$(grep "^GIT_AUTHOR_EMAIL=" "$env_file" | cut -d= -f2- || true)
-        [ -n "$val" ] && author_email="$val"
-        val=$(grep "^GIT_AUTHOR_NAME=" "$env_file" | cut -d= -f2- || true)
-        [ -n "$val" ] && author_name="$val"
-    fi
+    # Fall back to git global config values if available
+    local author_email author_name
+    author_email=$(git config --global user.email 2>/dev/null || echo "dev@beads.local")
+    author_name=$(git config --global user.name 2>/dev/null || echo "Dev")
     dolt config --global --add user.email "$author_email"
     dolt config --global --add user.name "$author_name"
     info "Configured dolt identity: $author_name <$author_email>"
@@ -51,33 +42,17 @@ ensure_dolt_identity() {
 
 # ── Create and init the Dolt remote repo ─────────────────────────────────────
 init_remote() {
-    if [ -d "$REMOTE_DIR/.dolt" ]; then
-        info "Remote already initialized at $REMOTE_DIR (idempotent)"
+    if [ -d "${REMOTE_DIR}/.dolt" ]; then
+        info "Remote already initialized at ${REMOTE_DIR} (idempotent)"
         return
     fi
     mkdir -p "$REMOTE_DIR"
     ( cd "$REMOTE_DIR" && dolt init )
-    info "Initialized Dolt remote at $REMOTE_DIR"
-}
-
-# ── Write BEADS_REMOTE_PATH to <project-root>/.env ───────────────────────────
-update_env() {
-    local env_file="$PROJECT_ROOT/.env"
-    if [ -f "$env_file" ]; then
-        if grep -q "^BEADS_REMOTE_PATH=" "$env_file"; then
-            info "BEADS_REMOTE_PATH already in .env"
-        else
-            echo "BEADS_REMOTE_PATH=${BEADS_REMOTE_PATH}" >> "$env_file"
-            info "Added BEADS_REMOTE_PATH to .env"
-        fi
-    else
-        echo "BEADS_REMOTE_PATH=${BEADS_REMOTE_PATH}" > "$env_file"
-        info "Created .env with BEADS_REMOTE_PATH"
-    fi
+    info "Initialized Dolt remote at ${REMOTE_DIR}"
 }
 
 ensure_dolt_identity
 init_remote
-update_env
 
-info "Done. BEADS_REMOTE_PATH=${BEADS_REMOTE_PATH}"
+info "Done. Beads remote for ${PROJECT_PATH}:"
+info "  ${BEADS_REMOTE}"
