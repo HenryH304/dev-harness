@@ -301,11 +301,12 @@ def _delete_worktree_background(ticket_id: int, project: str, worktree_path: str
             proj = await s.get(ProjectModel, project)
             if proj is None:
                 return
+            repo_path = proj.repo_path
         try:
             from app.worktree import delete_worktree
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(
-                None, delete_worktree, ticket_id, proj.repo_path, worktree_path
+                None, delete_worktree, ticket_id, repo_path, worktree_path
             )
             logger.info("Deleted worktree for ticket %d: %s", ticket_id, worktree_path)
         except Exception as exc:
