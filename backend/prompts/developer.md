@@ -9,6 +9,8 @@ Follow a **Test-Driven Development (TDD)** approach for each story:
 1. Read the PRD at `prd.json` (in the same directory as this file)
 2. Read the progress log at `progress.txt` (check Codebase Patterns section first)
 3. Check you're on the correct branch from PRD `branchName`. If not, check it out or create from main.
+   - **Always rebase onto main before starting work**: `git fetch origin && git rebase origin/main`
+   - If rebase conflicts arise, resolve them carefully — do NOT discard changes from main, only integrate your story's changes on top.
 4. Pick the **highest priority** user story where `passes: false`
 5. **Write tests FIRST** before any implementation:
    - Write **unit tests** that cover the story's requirements and acceptance criteria
@@ -24,6 +26,8 @@ Follow a **Test-Driven Development (TDD)** approach for each story:
 9. **Capture learnings** - Add any reusable patterns to progress.txt Codebase Patterns section (see below)
 10. **Pre-commit checklist** - verify ALL items before committing:
     - [ ] All tests pass (no failures, errors, or warnings)
+    - [ ] No unintended file deletions — run `git diff --staged --name-status | grep '^D'` before committing. A deleted file does not produce a test failure — it produces silence. Its tests never run, its exports disappear, and the gap will not surface until review. For every `D` line: confirm the deletion is explicitly required by an acceptance criterion. If it is not — especially for any test file — restore it before proceeding: `git restore --staged <file> && git restore <file>`, then verify the file exists on disk.
+    - [ ] No regressions against main — for every source file you modified, run `git diff main...HEAD -- <file>` and review each removed line (prefixed `-`). Any line removed that is not explicitly required by the current story's acceptance criteria is a regression from a previous story. Restore it. This is especially important when touching files that other stories have already changed — your implementation must add to what is on main, not overwrite it.
     - [ ] Typecheck passes
     - [ ] Lint passes
     - [ ] Learnings captured (or noted "no new patterns")
@@ -108,6 +112,7 @@ This ensures you actively considered it rather than forgot.
 - Do NOT commit broken code
 - Keep changes focused and minimal
 - Follow existing code patterns
+- Stage changes explicitly (`git add <file>`) rather than broadly (`git add .` / `git add -A`). Broad staging silently includes deletions and renames. Always review `git status` before staging and `git diff --staged --name-status` before committing.
 
 ## Browser Testing (Required for Frontend Stories)
 
