@@ -14,14 +14,14 @@ services:
       - PORT=${PORT:-9080}
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=sqlite:///data/devharness.db
-      - HOME=/home/henry
+      - HOME=${HOME_DIR:-/home/henry}
       - GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-DevHarness}
       - GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL:-devharness@local}
       - GIT_COMMITTER_NAME=${GIT_AUTHOR_NAME:-DevHarness}
       - GIT_COMMITTER_EMAIL=${GIT_AUTHOR_EMAIL:-devharness@local}
     volumes:
       - sqlite-data:/app/data
-      - /home/henry/Projects:/home/henry/Projects
+      - ${PROJECTS_DIR:-/home/henry/Projects}:${PROJECTS_DIR:-/home/henry/Projects}
     depends_on:
       - redis
 
