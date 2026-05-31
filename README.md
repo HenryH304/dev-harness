@@ -17,12 +17,40 @@ it is merged to main (or blocked for a human to look at).
 
 ---
 
+## Screenshots
+
+### Board
+
+The Kanban pipeline: tickets flow left-to-right through each agent's column,
+updating live over a WebSocket.
+
+![DevHarness Board](docs/images/board.png)
+
+### Dashboard
+
+Active agents, workflow metrics, timeout analytics, blocked tickets, the global
+agent-processing kill-switch, and project/feature management.
+
+![DevHarness Dashboard](docs/images/dashboard.png)
+
+### Settings
+
+Per-agent prompts (spec writer, story writer, developer, reviewer, tester,
+merger) and runtime app settings — timeouts, concurrency caps, and rejection /
+failure thresholds.
+
+![DevHarness Settings](docs/images/settings.png)
+
+---
+
 ## 1. Quick Setup & Install
 
 ### Prerequisites (host machine)
 
 - **Docker + docker-compose** — frontend, backend, redis run in Docker
-- **Python 3.11+** — for the host-side executor virtualenv
+- **Python 3.11–3.13** — for the host-side executor virtualenv. **Not 3.14+:**
+  the pinned dependencies (`pydantic-core==2.27.2`) have no 3.14 wheel and will
+  fail to build. The repo pins `3.13` via `.python-version`; see step 3.
 - **git** — worktrees are the unit of isolation
 - **The `ralph` CLI on your PATH** — the agent loop the executor invokes
 - **The `claude` CLI on your PATH** — ralph drives this; `--dangerously-skip-permissions` is used for unattended runs
@@ -83,12 +111,27 @@ bash scripts/init-beads-remote.sh ~/Projects/my-app
 The executor runs on the HOST (not in Docker) because it needs to launch
 `ralph`/`claude` against real worktrees on your filesystem.
 
+**Use a Python 3.11–3.13 interpreter to create the venv** — building on 3.14+
+fails (`pydantic-core` has no 3.14 wheel and the source build hard-stops on a
+PyO3 version check). The repo ships a `.python-version` pinning `3.13`, so if you
+use `pyenv` the right interpreter is selected automatically:
+
 ```sh
-python3 -m venv .venv
+# pyenv users: ensure 3.13 is installed, then the .python-version pin applies
+pyenv install -s 3.13          # skips if already installed
+python3 -m venv .venv          # picks up the pinned 3.13 here
+.venv/bin/python --version     # -> Python 3.13.x   (sanity check)
+
+.venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r backend/requirements.txt
 # (the executor only strictly needs `redis`, but installing the full set
 #  is simplest and lets you run the backend test-suite locally too)
 ```
+
+If you are not on `pyenv`, point the venv at any 3.11–3.13 interpreter
+explicitly, e.g. `python3.13 -m venv .venv`. A correct install pulls a prebuilt
+`pydantic-core ...-cp313-...whl` (no Rust compilation); if you see it trying to
+**build a wheel** for `pydantic-core`, your interpreter is too new.
 
 ### Step 4 — Start everything
 
