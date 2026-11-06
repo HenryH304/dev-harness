@@ -3,6 +3,7 @@
  */
 
 import { apiGet, apiPost } from './api.js';
+import { parseUtc } from './types.js';
 
 export interface FeatureRequestOut {
   id: number;
@@ -139,7 +140,7 @@ function _renderRow(r: FeatureRequestOut): string {
   const desc =
     r.description.length > 80 ? r.description.slice(0, 80) + '…' : r.description;
   const stories = r.imported_count != null ? String(r.imported_count) : '—';
-  const created = new Date(r.created_at).toLocaleString();
+  const created = parseUtc(r.created_at).toLocaleString();
   const errorTitle = r.error ? ` title="${escapeAttr(r.error)}"` : '';
   return `
     <tr>

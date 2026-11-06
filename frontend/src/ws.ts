@@ -32,6 +32,7 @@ export function createWsClient(url: string, reconnectInterval = 3000): WsClient 
   }
 
   function connect(): void {
+    if (ws !== null) return;
     intentionalClose = false;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);

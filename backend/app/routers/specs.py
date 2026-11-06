@@ -22,7 +22,8 @@ router = APIRouter(prefix="/api/specs", tags=["specs"])
 
 class CreateSpecRequest(BaseModel):
     project: str
-    description: str
+    description: str = ""
+    prd_path: str | None = None
 
 
 class AmendSpecRequest(BaseModel):
@@ -343,19 +344,11 @@ async def _run_conversion(spec_id: int) -> None:
         )
         return
 
-    import uuid
-    # Must be on the shared volume — container /tmp ≠ host /tmp so the backend
-    # would never find a file ralph wrote to host /tmp.
-    _work_base = Path.home() / "Projects" / ".devharness-tmp"
-    _work_base.mkdir(parents=True, exist_ok=True)
-    prd_output_path = str(_work_base / f"{uuid.uuid4()}-prd.json")
-
     try:
         result = await spawn_story_converter(
             spec_id=spec_id,
             project=project,
             spec_content=spec_content,
-            prd_output_path=prd_output_path,
         )
     except Exception as exc:
         logger.exception("story conversion spawn failed for spec %d", spec_id)
@@ -375,9 +368,9 @@ async def _run_conversion(spec_id: int) -> None:
         return
 
     try:
-        prd_file = Path(prd_output_path)
+        prd_file = Path(result.output_path or "")
         if not prd_file.exists():
-            raise FileNotFoundError(f"story-writer did not create {prd_output_path}")
+            raise FileNotFoundError(f"story-writer did not create {result.output_path}")
         prd_data = json.loads(prd_file.read_text())
         stories = prd_data.get("userStories", [])
         prd_file.unlink(missing_ok=True)
@@ -438,20 +431,46 @@ async def create_spec(
     body: CreateSpecRequest,
     session: AsyncSession = Depends(_get_session),
 ) -> SpecGenerationOut:
-    """Start spec-writer agent for a feature description."""
-    rec = SpecGeneration(
-        project=body.project,
-        description=body.description,
-        status="pending",
-    )
-    session.add(rec)
-    await session.commit()
-    await session.refresh(rec)
+    """Start spec-writer agent for a feature description, or register an existing spec file ready for review."""
+    if body.prd_path:
+        expanded = Path(body.prd_path).expanduser().resolve()
+        if not expanded.is_file():
+            raise HTTPException(status_code=422, detail=f"Spec file not found: {expanded}")
 
-    asyncio.create_task(
-        _run_spec_writing(rec.id),
-        name=f"spec-write-{rec.id}",
-    )
+        now = datetime.datetime.now(datetime.timezone.utc)
+        rec = SpecGeneration(
+            project=body.project,
+            description=f"Loaded from {body.prd_path}",
+            spec_path=str(expanded),
+            status="done",
+            step="spec_writing",
+            completed_at=now,
+        )
+        session.add(rec)
+        await session.commit()
+        await session.refresh(rec)
+
+        await publish_event(
+            "ticket:events",
+            {"event_type": "spec_update", "spec_id": rec.id, "status": "done", "step": "spec_writing", "error": None},
+        )
+    else:
+        if not body.description.strip():
+            raise HTTPException(status_code=422, detail="description is required when spec_path is not provided")
+
+        rec = SpecGeneration(
+            project=body.project,
+            description=body.description,
+            status="pending",
+        )
+        session.add(rec)
+        await session.commit()
+        await session.refresh(rec)
+
+        asyncio.create_task(
+            _run_spec_writing(rec.id),
+            name=f"spec-write-{rec.id}",
+        )
 
     return _to_out(rec)
 
@@ -499,8 +518,8 @@ async def convert_spec(
     rec = await session.get(SpecGeneration, spec_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="Spec generation not found")
-    if rec.status != "done" or not rec.spec_path:
-        raise HTTPException(status_code=409, detail="Spec must be in 'done' state with a spec file")
+    if rec.status not in ("done", "failed") or not rec.spec_path:
+        raise HTTPException(status_code=409, detail="Spec must be in 'done' or 'failed' state with a spec file")
 
     asyncio.create_task(
         _run_conversion(rec.id),

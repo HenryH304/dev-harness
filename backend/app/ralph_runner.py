@@ -30,6 +30,7 @@ class SpawnResult:
     ticket_id: int
     success: bool
     exit_code: int
+    output_path: str | None = None
 
 
 async def _spawn_via_host(cwd: str, timeout: int) -> int:
@@ -214,7 +215,10 @@ async def spawn_prd_writer(
     _write_work_file(work_dir / "progress.txt", "")
     _write_work_file(work_dir / "ralph.log", "")
 
-    exit_code = await _spawn_via_host(str(work_dir), 600)
+    from app.config import fetch_db_overrides, load_config
+    db = await fetch_db_overrides()
+    timeout = load_config(db_overrides=db).story_writer_timeout
+    exit_code = await _spawn_via_host(str(work_dir), timeout)
 
     return SpawnResult(
         ticket_id=feature_request_id,
@@ -255,7 +259,10 @@ async def spawn_spec_writer(
     _write_work_file(work_dir / "progress.txt", "")
     _write_work_file(work_dir / "ralph.log", "")
 
-    exit_code = await _spawn_via_host(str(work_dir), 600)
+    from app.config import fetch_db_overrides, load_config
+    db = await fetch_db_overrides()
+    timeout = load_config(db_overrides=db).story_writer_timeout
+    exit_code = await _spawn_via_host(str(work_dir), timeout)
 
     return SpawnResult(
         ticket_id=spec_id,
@@ -268,13 +275,13 @@ async def spawn_story_converter(
     spec_id: int,
     project: str,
     spec_content: str,
-    prd_output_path: str,
 ) -> SpawnResult:
     """Run the story-writer agent to convert a spec document into prd.json stories."""
     story_writer_path = Path(__file__).parent.parent / "prompts" / "story-writer.md"
     prompt = load_prompt(str(story_writer_path))
 
     work_dir = _make_work_dir(f"story-converter-{spec_id}")
+    prd_output_path = str(work_dir / "output-prd.json")
 
     input_prd = {
         "project": project,
@@ -302,10 +309,14 @@ async def spawn_story_converter(
     _write_work_file(work_dir / "progress.txt", "")
     _write_work_file(work_dir / "ralph.log", "")
 
-    exit_code = await _spawn_via_host(str(work_dir), 600)
+    from app.config import fetch_db_overrides, load_config
+    db = await fetch_db_overrides()
+    timeout = load_config(db_overrides=db).story_writer_timeout
+    exit_code = await _spawn_via_host(str(work_dir), timeout)
 
     return SpawnResult(
         ticket_id=spec_id,
         success=exit_code == 0,
         exit_code=exit_code,
+        output_path=prd_output_path,
     )

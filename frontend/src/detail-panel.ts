@@ -1,4 +1,5 @@
 import { apiGet, apiPatch } from './api.js';
+import { parseUtc } from './types.js';
 
 export interface Note {
   id: number;
@@ -135,6 +136,15 @@ export function renderDetailPanel(
   closeBtn.addEventListener('click', () => closeDetailPanel());
   panel.appendChild(closeBtn);
 
+  // Ticket ID link \u2014 opens full-window view in new tab
+  const idLink = document.createElement('a');
+  idLink.className = 'detail-id-link';
+  idLink.textContent = `#${ticket.id}`;
+  idLink.href = `#/ticket/${ticket.id}`;
+  idLink.target = '_blank';
+  idLink.rel = 'noopener';
+  panel.appendChild(idLink);
+
   // Title
   const title = document.createElement('h2');
   title.className = 'detail-title';
@@ -150,8 +160,8 @@ export function renderDetailPanel(
     <div class="detail-meta-row"><strong>Project:</strong> ${ticket.project}</div>
     <div class="detail-meta-row"><strong>Branch:</strong> ${ticket.branch_name ?? 'N/A'}</div>
     <div class="detail-meta-row"><strong>Agent:</strong> ${ticket.current_agent ?? 'None'}</div>
-    <div class="detail-meta-row"><strong>Last modified:</strong> ${new Date(ticket.updated_at).toLocaleString()}</div>
-    <div class="detail-meta-row"><strong>Created:</strong> ${new Date(ticket.created_at).toLocaleString()}</div>
+    <div class="detail-meta-row"><strong>Last modified:</strong> ${parseUtc(ticket.updated_at).toLocaleString()}</div>
+    <div class="detail-meta-row"><strong>Created:</strong> ${parseUtc(ticket.created_at).toLocaleString()}</div>
   `;
   panel.appendChild(meta);
 

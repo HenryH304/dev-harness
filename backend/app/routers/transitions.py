@@ -99,8 +99,8 @@ async def transition_ticket(
             detail="Ticket is blocked. Use manual_override to transition.",
         )
 
-    # For blocked tickets with manual_override, allow transition to any valid state
-    if previous_state != "blocked":
+    # manual_override bypasses the transition table for all states
+    if not transition.manual_override:
         allowed = ALLOWED_TRANSITIONS.get(previous_state, set())
         if transition.new_state not in allowed:
             raise HTTPException(

@@ -134,7 +134,7 @@ def create_worktree(ticket_id: int, project_path: str) -> dict[str, str]:
 
     # Add progress.txt and ralph.log to .gitignore in worktree
     gitignore_path = worktree_dir / ".gitignore"
-    gitignore_entries = {"progress.txt", "ralph.log"}
+    gitignore_entries = {"progress.txt", "ralph.log", ".beads/"}
     existing_content = ""
     if gitignore_path.exists():
         existing_content = gitignore_path.read_text()
@@ -175,12 +175,12 @@ def delete_worktree(
         ticket_id: The ticket ID whose worktree to delete.
         project_path: Path to the main git repository.
         worktree_path: Path to the worktree to remove.
-
-    Raises:
-        WorktreeError: If git worktree remove fails.
     """
     branch_name = f"ticket/{ticket_id}"
+    wt_dir = Path(worktree_path)
 
+    # Try the clean git path first.
+    git_removed = False
     try:
         result = subprocess.run(
             ["git", "worktree", "remove", "--force", worktree_path],
@@ -188,12 +188,35 @@ def delete_worktree(
             capture_output=True,
             text=True,
         )
-        if result.returncode != 0:
-            raise WorktreeError(
-                f"Failed to remove worktree: {result.stderr.strip()}"
+        git_removed = result.returncode == 0
+    except subprocess.SubprocessError:
+        pass
+
+    if not git_removed:
+        # git worktree remove failed (corrupted metadata, renamed directory,
+        # wrong .git type, etc.).  Prune stale registry entries, then fall back
+        # to a direct directory removal so we don't leave disk garbage behind.
+        logger.warning(
+            "git worktree remove failed for ticket %d; falling back to prune + rmtree",
+            ticket_id,
+        )
+        try:
+            subprocess.run(
+                ["git", "worktree", "prune"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
             )
-    except subprocess.SubprocessError as e:
-        raise WorktreeError(f"Git error: {e}") from e
+        except subprocess.SubprocessError:
+            pass
+        if wt_dir.exists():
+            try:
+                shutil.rmtree(worktree_path)
+            except OSError as exc:
+                logger.warning(
+                    "rmtree failed for ticket %d worktree %s: %s",
+                    ticket_id, worktree_path, exc,
+                )
 
     # Delete branch (non-fatal if it fails — branch may already be gone)
     try:

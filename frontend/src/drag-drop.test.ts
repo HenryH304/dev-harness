@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Ticket } from './types.js';
 import {
-  ALLOWED_TRANSITIONS,
   isValidTransition,
   setupDragDrop,
   showUndoToast,
@@ -35,29 +34,17 @@ function makeTicket(overrides: Partial<Ticket> = {}): Ticket {
   };
 }
 
-describe('ALLOWED_TRANSITIONS', () => {
-  it('maps each state to valid next states', () => {
-    expect(ALLOWED_TRANSITIONS['to_do']).toContain('in_progress');
-    expect(ALLOWED_TRANSITIONS['to_do']).toContain('blocked');
-    expect(ALLOWED_TRANSITIONS['in_progress']).toContain('ready_for_review');
-    expect(ALLOWED_TRANSITIONS['ready_for_merge']).toContain('in_merge');
-    expect(ALLOWED_TRANSITIONS['in_merge']).toContain('done');
-  });
-
-  it('blocked state allows transition to any state (manual override)', () => {
-    expect(ALLOWED_TRANSITIONS['blocked'].length).toBeGreaterThan(0);
-  });
-});
-
 describe('isValidTransition', () => {
-  it('returns true for valid forward transitions', () => {
+  it('allows moving to any different state', () => {
     expect(isValidTransition('to_do', 'in_progress')).toBe(true);
-    expect(isValidTransition('in_progress', 'ready_for_review')).toBe(true);
+    expect(isValidTransition('to_do', 'done')).toBe(true);
+    expect(isValidTransition('in_progress', 'ready_for_merge')).toBe(true);
+    expect(isValidTransition('in_progress', 'blocked')).toBe(true);
   });
 
-  it('returns false for invalid transitions', () => {
-    expect(isValidTransition('to_do', 'done')).toBe(false);
-    expect(isValidTransition('to_do', 'ready_for_test')).toBe(false);
+  it('returns false for same-state and unknown states', () => {
+    expect(isValidTransition('to_do', 'to_do')).toBe(false);
+    expect(isValidTransition('to_do', 'unknown_state')).toBe(false);
   });
 
   it('returns true for any-to-blocked transitions', () => {

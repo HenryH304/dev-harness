@@ -1,3 +1,8 @@
+/** Parse a naive UTC timestamp string from the API (no Z suffix) as UTC. */
+export function parseUtc(iso: string): Date {
+  return new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+}
+
 export interface Ticket {
   id: number;
   project: string;

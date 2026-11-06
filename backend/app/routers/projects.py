@@ -215,11 +215,12 @@ async def import_project(
             )
 
     # Read and parse prd.json
+    expanded_prd = os.path.expanduser(req.prd_path)
     try:
-        with open(req.prd_path) as f:
+        with open(expanded_prd) as f:
             prd_data = json.load(f)
     except FileNotFoundError:
-        raise HTTPException(status_code=400, detail=f"File not found: {req.prd_path}")
+        raise HTTPException(status_code=400, detail=f"File not found: {expanded_prd}")
     except json.JSONDecodeError:
         raise HTTPException(
             status_code=400, detail=f"Invalid JSON in file: {req.prd_path}"

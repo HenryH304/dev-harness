@@ -31,7 +31,7 @@ export function renderProjectManagement(
   container: HTMLElement,
   projects: ProjectInfo[],
   activePriority: string,
-  onImport: (projectName: string, prdPath: string, repoPath: string, createIfMissing: boolean) => Promise<boolean>,
+  onImport: (projectName: string, prdPath: string, repoPath: string, createIfMissing: boolean) => Promise<{ ok: boolean; error?: string }>,
   onSetPriority: (projectName: string) => Promise<boolean>,
   onReorder?: (projectName: string, direction: 'up' | 'down') => Promise<void>,
 ): void {
@@ -134,15 +134,15 @@ export function renderProjectManagement(
 
     msgEl.textContent = 'Importing...';
 
-    const ok = await onImport(name, path, repoPath, createIfMissing);
-    if (ok) {
+    const result = await onImport(name, path, repoPath, createIfMissing);
+    if (result.ok) {
       msgEl.textContent = 'Import successful';
       msgEl.className = 'project-import-msg project-import-msg--success';
       nameInput.value = '';
       pathInput.value = '';
       repoInput.value = '';
     } else {
-      msgEl.textContent = 'Import failed';
+      msgEl.textContent = `Import failed: ${result.error ?? 'unknown error'}`;
       msgEl.className = 'project-import-msg project-import-msg--error';
     }
   });
@@ -186,9 +186,9 @@ export async function importProject(
   prdPath: string,
   repoPath: string,
   createIfMissing: boolean,
-): Promise<boolean> {
+): Promise<{ ok: boolean; error?: string }> {
   try {
-    const resp = await apiPost<{ imported_count: number }>(
+    const resp = await apiPost<{ imported_count: number } | { detail: string }>(
       '/projects/import',
       {
         project_name: projectName,
@@ -197,9 +197,11 @@ export async function importProject(
         create_repo_if_missing: createIfMissing,
       },
     );
-    return resp.ok;
+    if (resp.ok) return { ok: true };
+    const detail = (resp.data as { detail?: string }).detail;
+    return { ok: false, error: detail ?? `HTTP ${resp.status}` };
   } catch {
-    return false;
+    return { ok: false, error: 'Network error' };
   }
 }
 

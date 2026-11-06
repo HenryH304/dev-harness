@@ -3,6 +3,7 @@
  * openSpecReviewModal handles the review / amend / convert flow for a completed spec.
  */
 
+import { marked } from 'marked';
 import { apiGet, apiPost, apiPut } from './api.js';
 
 interface SpecGenerationOut {
@@ -65,9 +66,22 @@ export function openAddStoryModal(options: {
             ${projects.map((p) => `<option value="${escHtml(p)}">`).join('')}
           </datalist>
 
-          <label class="add-story-label" for="as-desc">Feature / Requirement</label>
-          <textarea class="add-story-textarea" id="as-desc"
-            placeholder="Describe the feature or requirement…" rows="6"></textarea>
+          <div class="add-story-mode-toggle">
+            <button class="as-mode-btn as-mode-btn--active" id="as-mode-describe">Describe Feature</button>
+            <button class="as-mode-btn" id="as-mode-prd">Use Existing PRD</button>
+          </div>
+
+          <div id="as-describe-section">
+            <label class="add-story-label" for="as-desc">Feature / Requirement</label>
+            <textarea class="add-story-textarea" id="as-desc"
+              placeholder="Describe the feature or requirement…" rows="6"></textarea>
+          </div>
+
+          <div id="as-prd-section" hidden>
+            <label class="add-story-label" for="as-prd-path">Spec File Path</label>
+            <input class="add-story-input" id="as-prd-path" type="text"
+              placeholder="~/Projects/my-project/tasks/spec.md" />
+          </div>
 
           <p class="add-story-msg" id="as-msg"></p>
 
@@ -83,9 +97,34 @@ export function openAddStoryModal(options: {
   overlay.querySelector('.add-story-close')!.addEventListener('click', close);
   overlay.querySelector('#as-cancel')!.addEventListener('click', close);
 
-  overlay.querySelector('#as-submit')!.addEventListener('click', async () => {
+  // Mode toggle
+  let prdMode = false;
+  const describeBtn = overlay.querySelector<HTMLButtonElement>('#as-mode-describe')!;
+  const prdBtn = overlay.querySelector<HTMLButtonElement>('#as-mode-prd')!;
+  const describeSection = overlay.querySelector<HTMLElement>('#as-describe-section')!;
+  const prdSection = overlay.querySelector<HTMLElement>('#as-prd-section')!;
+  const submitBtn = overlay.querySelector<HTMLButtonElement>('#as-submit')!;
+
+  describeBtn.addEventListener('click', () => {
+    prdMode = false;
+    describeBtn.classList.add('as-mode-btn--active');
+    prdBtn.classList.remove('as-mode-btn--active');
+    describeSection.hidden = false;
+    prdSection.hidden = true;
+    submitBtn.textContent = 'Generate Specification';
+  });
+
+  prdBtn.addEventListener('click', () => {
+    prdMode = true;
+    prdBtn.classList.add('as-mode-btn--active');
+    describeBtn.classList.remove('as-mode-btn--active');
+    prdSection.hidden = false;
+    describeSection.hidden = true;
+    submitBtn.textContent = 'Load Specification';
+  });
+
+  submitBtn.addEventListener('click', async () => {
     const project = (overlay.querySelector<HTMLInputElement>('#as-project')!).value.trim();
-    const desc = (overlay.querySelector<HTMLTextAreaElement>('#as-desc')!).value.trim();
     const msg = overlay.querySelector<HTMLElement>('#as-msg')!;
 
     if (!project) {
@@ -93,22 +132,37 @@ export function openAddStoryModal(options: {
       msg.className = 'add-story-msg add-story-msg--error';
       return;
     }
-    if (!desc) {
-      msg.textContent = 'Feature description is required.';
-      msg.className = 'add-story-msg add-story-msg--error';
-      return;
+
+    let body: Record<string, string>;
+
+    if (prdMode) {
+      const prdPath = (overlay.querySelector<HTMLInputElement>('#as-prd-path')!).value.trim();
+      if (!prdPath) {
+        msg.textContent = 'PRD path is required.';
+        msg.className = 'add-story-msg add-story-msg--error';
+        return;
+      }
+      body = { project, prd_path: prdPath };
+    } else {
+      const desc = (overlay.querySelector<HTMLTextAreaElement>('#as-desc')!).value.trim();
+      if (!desc) {
+        msg.textContent = 'Feature description is required.';
+        msg.className = 'add-story-msg add-story-msg--error';
+        return;
+      }
+      body = { project, description: desc };
     }
 
-    const submitBtn = overlay.querySelector<HTMLButtonElement>('#as-submit')!;
     submitBtn.disabled = true;
     submitBtn.textContent = 'Submitting…';
 
-    const resp = await apiPost<SpecGenerationOut>('/specs', { project, description: desc });
+    const resp = await apiPost<SpecGenerationOut>('/specs', body);
     if (!resp.ok) {
-      msg.textContent = 'Failed to start spec generation. Please try again.';
+      const detail = (resp.data as { detail?: string }).detail;
+      msg.textContent = detail ?? 'Failed to submit. Please try again.';
       msg.className = 'add-story-msg add-story-msg--error';
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Generate Specification';
+      submitBtn.textContent = prdMode ? 'Load Specification' : 'Generate Specification';
       return;
     }
 
@@ -173,10 +227,10 @@ export function openSpecReviewModal(options: {
   }
 
   function showSpec(spec: SpecGenerationOut): void {
-    const content = escHtml(spec.spec_content ?? '');
+    const rendered = marked.parse(spec.spec_content ?? '') as string;
     renderShell('Review Specification', `
       <div class="add-story-spec-wrap">
-        <pre class="add-story-spec-pre">${content}</pre>
+        <div class="add-story-spec-body">${rendered}</div>
 
         <details class="add-story-amend-details">
           <summary class="add-story-amend-summary">Request Amendment</summary>

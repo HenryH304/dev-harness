@@ -29,6 +29,7 @@ class AppConfig:
     review_rejection_threshold: int = 3
     developer_failure_threshold: int = 3
     tester_rejection_threshold: int = 3
+    story_writer_timeout: int = 1800  # 30 minutes
     agent_timeouts: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_AGENT_TIMEOUTS))
     max_agents_per_type: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_MAX_AGENTS_PER_TYPE))
 
@@ -116,6 +117,10 @@ def load_config(
     if tester_reject_env is not None:
         config.tester_rejection_threshold = int(tester_reject_env)
 
+    story_writer_timeout_env = os.environ.get("STORY_WRITER_TIMEOUT")
+    if story_writer_timeout_env is not None:
+        config.story_writer_timeout = int(story_writer_timeout_env)
+
     # Per-agent-type timeout overrides
     for agent_type in DEFAULT_AGENT_TIMEOUTS:
         env_key = f"AGENT_TIMEOUT_{agent_type.upper()}"
@@ -144,6 +149,7 @@ def load_config(
             ("review_rejection_threshold", "review_rejection_threshold"),
             ("developer_failure_threshold", "developer_failure_threshold"),
             ("tester_rejection_threshold", "tester_rejection_threshold"),
+            ("story_writer_timeout", "story_writer_timeout"),
         ):
             val = db_overrides.get(key)
             if val is not None:

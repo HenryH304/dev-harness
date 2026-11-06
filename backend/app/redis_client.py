@@ -76,7 +76,7 @@ async def subscribe_events(channel: str) -> AsyncGenerator[dict[str, Any], None]
                 ignore_subscribe_messages=True, timeout=1.0
             )
             if message is None:
-                break
+                continue
             if message["type"] != "message":
                 continue
             data = json.loads(message["data"])

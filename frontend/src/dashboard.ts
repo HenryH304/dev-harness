@@ -315,9 +315,9 @@ export async function loadDashboard(container: HTMLElement): Promise<void> {
         data.projects,
         data.active_priority_project,
         async (name, path, repoPath, createIfMissing) => {
-          const ok = await importProject(name, path, repoPath, createIfMissing);
-          if (ok) await loadProjectsPanel();
-          return ok;
+          const result = await importProject(name, path, repoPath, createIfMissing);
+          if (result.ok) await loadProjectsPanel();
+          return result;
         },
         async (name) => {
           const ok = await setActivePriority(name);

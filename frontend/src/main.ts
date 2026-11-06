@@ -3,6 +3,8 @@ import { apiGet } from './api.js';
 import { renderBoard } from './board.js';
 import { createWsClient } from './ws.js';
 import { setupRealtimeUpdates } from './realtime.js';
+import { renderDetailPanel } from './detail-panel.js';
+import type { TicketDetail, DependencyList } from './detail-panel.js';
 import { setupDragDrop } from './drag-drop.js';
 import { loadDashboard } from './dashboard.js';
 import {
@@ -21,7 +23,24 @@ import type { DepStatus } from './dependency-icons.js';
 
 const appEl = document.querySelector<HTMLDivElement>('#app')!;
 
+const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
+const wsClient = createWsClient(wsUrl);
+wsClient.connect();
+
 type Page = 'board' | 'dashboard' | 'settings';
+
+function applyConnectionStatus(status: string, dot: HTMLElement, label: HTMLElement): void {
+  dot.className = 'dot';
+  if (status === 'connected') {
+    dot.classList.add('connected');
+    label.textContent = 'Connected';
+  } else if (status === 'reconnecting') {
+    dot.classList.add('reconnecting');
+    label.textContent = 'Reconnecting...';
+  } else {
+    label.textContent = 'Disconnected';
+  }
+}
 
 function renderShell(page: Page): void {
   appEl.innerHTML = `
@@ -41,6 +60,11 @@ function renderShell(page: Page): void {
       <p style="color: var(--color-text-muted); padding: var(--space-lg);">Loading...</p>
     </main>
   `;
+
+  const dot = document.getElementById('ws-dot')!;
+  const label = document.getElementById('ws-label')!;
+  applyConnectionStatus(wsClient.getStatus(), dot, label);
+  wsClient.onStatusChange((s) => applyConnectionStatus(s, dot, label));
 
   appEl.querySelectorAll('.nav-link').forEach((link) => {
     link.addEventListener('click', (e) => {
@@ -218,7 +242,17 @@ async function loadBoard(): Promise<void> {
     const filtered = getFilteredTickets();
     renderBoard(boardContainer, filtered);
     applyDependencyIcons(boardContainer, depStatus);
-    setupDragDrop(boardContainer, filtered);
+    setupDragDrop(boardContainer, filtered, refreshBoard);
+  }
+
+  async function refreshBoard(): Promise<void> {
+    const [ticketResp, freshDeps] = await Promise.all([
+      apiGet<Ticket[]>('/tickets'),
+      fetchUnresolvedDeps(),
+    ]);
+    if (ticketResp.ok) allTickets = ticketResp.data;
+    depStatus = freshDeps;
+    rerenderBoard();
   }
 
   rerenderBoard();
@@ -259,8 +293,6 @@ async function loadBoard(): Promise<void> {
     updateSetPriorityBtn();
   });
 
-  const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
-  const wsClient = createWsClient(wsUrl);
   setupRealtimeUpdates(wsClient, boardContainer, dot, label, allTickets, async (b, _t) => {
     allTickets = _t;
     const freshDeps = await fetchUnresolvedDeps();
@@ -269,10 +301,10 @@ async function loadBoard(): Promise<void> {
       const filtered = _t.filter((t) => t.project === selectedFilter);
       renderBoard(b, filtered);
       applyDependencyIcons(b, freshDeps);
-      setupDragDrop(b, filtered);
+      setupDragDrop(b, filtered, refreshBoard);
     } else {
       applyDependencyIcons(b, freshDeps);
-      setupDragDrop(b, _t);
+      setupDragDrop(b, _t, refreshBoard);
     }
   }, () => void panel.refresh());
 }
@@ -332,11 +364,38 @@ function navigateTo(page: Page): void {
   else window.location.hash = '#/';
 }
 
+async function loadTicketPage(ticketId: number): Promise<void> {
+  appEl.innerHTML = `
+    <div class="ticket-page">
+      <p style="color: var(--color-text-muted); padding: var(--space-lg);">Loading ticket #${ticketId}…</p>
+    </div>
+  `;
+
+  const [ticketResp, depsResp] = await Promise.all([
+    apiGet<TicketDetail>(`/tickets/${ticketId}`),
+    apiGet<DependencyList>(`/tickets/${ticketId}/dependencies`),
+  ]);
+
+  if (!ticketResp.ok) {
+    appEl.innerHTML = `<p style="color:var(--color-text-muted);padding:var(--space-lg);">Ticket #${ticketId} not found.</p>`;
+    return;
+  }
+
+  const panel = renderDetailPanel(ticketResp.data, depsResp.ok ? depsResp.data : null);
+  panel.classList.add('ticket-page-panel');
+  appEl.innerHTML = '';
+  appEl.appendChild(panel);
+}
+
 function handleRoute(): void {
   const hash = window.location.hash;
   if (hash === '#/dashboard') loadDashboardPage();
   else if (hash === '#/settings') loadSettingsPage();
-  else loadBoard();
+  else {
+    const ticketMatch = hash.match(/^#\/ticket\/(\d+)$/);
+    if (ticketMatch) loadTicketPage(Number(ticketMatch[1]));
+    else loadBoard();
+  }
 }
 
 window.addEventListener('hashchange', handleRoute);

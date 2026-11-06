@@ -5,16 +5,16 @@ import type { ProjectInfo } from './project-management.js';
 
 describe('renderProjectManagement', () => {
   let container: HTMLElement;
-  let onImport: (projectName: string, prdPath: string, repoPath: string, createIfMissing: boolean) => Promise<boolean>;
+  let onImport: (projectName: string, prdPath: string, repoPath: string, createIfMissing: boolean) => Promise<{ ok: boolean; error?: string }>;
   let onSetPriority: (projectName: string) => Promise<boolean>;
   let onImportMock: ReturnType<typeof vi.fn>;
   let onSetPriorityMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     container = document.createElement('div');
-    onImportMock = vi.fn().mockResolvedValue(true);
+    onImportMock = vi.fn().mockResolvedValue({ ok: true });
     onSetPriorityMock = vi.fn().mockResolvedValue(true);
-    onImport = onImportMock as (projectName: string, prdPath: string, repoPath: string, createIfMissing: boolean) => Promise<boolean>;
+    onImport = onImportMock as (projectName: string, prdPath: string, repoPath: string, createIfMissing: boolean) => Promise<{ ok: boolean; error?: string }>;
     onSetPriority = onSetPriorityMock as (projectName: string) => Promise<boolean>;
   });
 
@@ -142,7 +142,7 @@ describe('renderProjectManagement', () => {
   });
 
   it('shows error message on failed import', async () => {
-    onImportMock.mockResolvedValue(false);
+    onImportMock.mockResolvedValue({ ok: false, error: 'File not found: /tmp/prd.json' });
     renderProjectManagement(container, [], '', onImport, onSetPriority);
     const nameInput = container.querySelector<HTMLInputElement>('#import-project-name')!;
     const pathInput = container.querySelector<HTMLInputElement>('#import-prd-path')!;
@@ -155,6 +155,7 @@ describe('renderProjectManagement', () => {
     await vi.waitFor(() => {
       const msg = container.querySelector('.project-import-msg')!;
       expect(msg.textContent).toContain('failed');
+      expect(msg.textContent).toContain('File not found: /tmp/prd.json');
     });
   });
 

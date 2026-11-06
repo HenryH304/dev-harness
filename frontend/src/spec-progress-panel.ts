@@ -3,13 +3,14 @@
  * Dismissals are persisted in localStorage so they survive page reloads.
  */
 
-import { apiGet } from './api.js';
+import { apiGet, apiPost } from './api.js';
 
 export interface SpecOut {
   id: number;
   project: string;
   description: string;
   spec_content: string | null;
+  spec_path: string | null;
   status: string;
   step: string | null;
   imported_count: number | null;
@@ -61,7 +62,7 @@ function statusIcon(s: SpecOut): string {
 
 function formatTime(iso: string | null): string {
   if (!iso) return '—';
-  const d = new Date(iso);
+  const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
@@ -181,12 +182,16 @@ export function mountSpecProgressPanel(
     }
 
     if (s.status === 'failed') {
+      const canRetryConvert = s.step === 'converting' && s.spec_path !== null;
       return `<div class="spp-card spp-card--error" data-spec-id="${s.id}">
         <div class="spp-info">
           <span class="spp-desc">${desc}</span>
           <span class="spp-step spp-step--error">Failed: ${esc(s.error ?? 'unknown error')}</span>
         </div>
-        <button class="dash-btn spp-dismiss-btn">Dismiss</button>
+        <div class="spp-actions">
+          ${canRetryConvert ? `<button class="dash-btn dash-btn-primary spp-retry-convert-btn">Retry</button>` : ''}
+          <button class="dash-btn spp-dismiss-btn">Dismiss</button>
+        </div>
       </div>`;
     }
 
@@ -207,6 +212,9 @@ export function mountSpecProgressPanel(
     container.querySelectorAll<HTMLElement>('[data-spec-id]').forEach(card => {
       const id = parseInt(card.dataset.specId ?? '0', 10);
       card.querySelector('.spp-review-btn')?.addEventListener('click', () => onReview(id));
+      card.querySelector('.spp-retry-convert-btn')?.addEventListener('click', async () => {
+        await apiPost(`/specs/${id}/convert`, {});
+      });
       card.querySelector('.spp-dismiss-btn')?.addEventListener('click', () => dismiss(id));
     });
   }

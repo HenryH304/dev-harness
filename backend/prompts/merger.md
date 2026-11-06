@@ -249,3 +249,5 @@ Then signal complete:
 - **Resolve conflicts yourself** — reading both sides and producing the correct merged result is within your capabilities.
 - **Never force-push main** — only fast-forward merges to main are acceptable.
 - **Do not remove the worktree directory** — the system deletes it automatically after you signal complete. Only delete branch references.
+- **Never copy, rename, or back up the worktree directory** — do not `cp -r`, `mv`, or otherwise duplicate the worktree at a `-bak`, `-stale`, or any other path. The system owns the worktree lifecycle. Creating copies orphans directories and corrupts git's worktree registry, causing cleanup to fail permanently.
+- **Never create git worktrees inside `/tmp`** — all merge work must be done inside the existing ticket worktree (`worktreePath` from `prd.json`). Ad-hoc worktrees in `/tmp` are never cleaned up and accumulate indefinitely.

@@ -1,33 +1,13 @@
 import type { Ticket } from './types.js';
 import { apiPost } from './api.js';
 
-export const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  to_do: ['in_progress', 'blocked'],
-  in_progress: ['ready_for_review', 'blocked'],
-  ready_for_review: ['in_review', 'blocked'],
-  in_review: ['ready_for_test', 'blocked'],
-  ready_for_test: ['in_test', 'blocked'],
-  in_test: ['ready_for_merge', 'blocked'],
-  ready_for_merge: ['in_merge', 'blocked'],
-  in_merge: ['done', 'blocked'],
-  done: ['blocked'],
-  blocked: [
-    'to_do',
-    'in_progress',
-    'ready_for_review',
-    'in_review',
-    'ready_for_test',
-    'in_test',
-    'ready_for_merge',
-    'in_merge',
-    'done',
-  ],
-};
+const ALL_STATES = [
+  'to_do', 'in_progress', 'ready_for_review', 'in_review',
+  'ready_for_test', 'in_test', 'ready_for_merge', 'in_merge', 'done', 'blocked',
+];
 
 export function isValidTransition(from: string, to: string): boolean {
-  if (from === to) return false;
-  const allowed = ALLOWED_TRANSITIONS[from];
-  return allowed ? allowed.includes(to) : false;
+  return from !== to && ALL_STATES.includes(to);
 }
 
 interface DragState {
@@ -38,7 +18,7 @@ interface DragState {
 let dragState: DragState = { ticketId: null, fromState: null };
 let undoTimer: ReturnType<typeof setTimeout> | null = null;
 
-export function setupDragDrop(boardEl: HTMLElement, tickets: Ticket[]): void {
+export function setupDragDrop(boardEl: HTMLElement, tickets: Ticket[], onMoved?: () => void): void {
   const ticketMap = new Map<number, Ticket>();
   for (const t of tickets) {
     ticketMap.set(t.id, t);
@@ -104,7 +84,10 @@ export function setupDragDrop(boardEl: HTMLElement, tickets: Ticket[]): void {
       }
     });
 
-    colEl.addEventListener('dragleave', () => {
+    colEl.addEventListener('dragleave', (e: Event) => {
+      const de = e as DragEvent;
+      // Only clear highlight when actually leaving the column, not when entering a child element
+      if (de.relatedTarget && colEl.contains(de.relatedTarget as Node)) return;
       colEl.classList.remove('column--drop-target', 'column--invalid-drop');
     });
 
@@ -119,22 +102,23 @@ export function setupDragDrop(boardEl: HTMLElement, tickets: Ticket[]): void {
       const fromState = dragState.fromState;
       const toState = columnKey;
 
-      // Call transition API with manual_override flag
-      const isFromBlocked = fromState === 'blocked';
       apiPost(`/tickets/${ticketId}/transition`, {
         new_state: toState,
-        manual_override: isFromBlocked,
+        manual_override: true,
         note: `Manually moved from ${fromState} to ${toState} by user`,
-      }).then(() => {
-        // Show undo toast
-        showUndoToast(ticketId, fromState, toState, () => {
-          // Undo: transition back to original state
-          apiPost(`/tickets/${ticketId}/transition`, {
-            new_state: fromState,
-            manual_override: true,
-            note: `Undo: reverted from ${toState} back to ${fromState} by user`,
+      }).then((resp) => {
+        if (resp.ok) {
+          onMoved?.();
+          showUndoToast(ticketId, fromState, toState, () => {
+            apiPost(`/tickets/${ticketId}/transition`, {
+              new_state: fromState,
+              manual_override: true,
+              note: `Undo: reverted from ${toState} back to ${fromState} by user`,
+            }).then(() => onMoved?.());
           });
-        });
+        } else {
+          showErrorToast(`Failed to move ticket #${ticketId}: ${resp.status}`);
+        }
       });
     });
   });
@@ -169,6 +153,15 @@ export function showUndoToast(
   undoTimer = setTimeout(() => {
     hideUndoToast();
   }, 5000);
+}
+
+export function showErrorToast(message: string): void {
+  hideUndoToast();
+  const toast = document.createElement('div');
+  toast.className = 'undo-toast undo-toast--error';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 5000);
 }
 
 export function hideUndoToast(): void {

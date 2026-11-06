@@ -1,5 +1,5 @@
 import type { Ticket, ColumnKey } from './types.js';
-import { COLUMNS } from './types.js';
+import { COLUMNS, parseUtc } from './types.js';
 import { openDetailPanel } from './detail-panel.js';
 
 export function groupTicketsByState(
@@ -26,7 +26,7 @@ function getPriorityClass(priority: number): string {
 }
 
 function timeAgo(iso: string): string {
-  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const secs = Math.floor((Date.now() - parseUtc(iso).getTime()) / 1000);
   if (secs < 60) return `${secs}s ago`;
   const mins = Math.floor(secs / 60);
   if (mins < 60) return `${mins}m ago`;
@@ -70,7 +70,7 @@ export function renderCard(ticket: Ticket): HTMLElement {
 
   const age = document.createElement('span');
   age.className = 'card-age';
-  age.title = new Date(ticket.updated_at).toLocaleString();
+  age.title = parseUtc(ticket.updated_at).toLocaleString();
   age.textContent = timeAgo(ticket.updated_at);
   meta.appendChild(age);
 
